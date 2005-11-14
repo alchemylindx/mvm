@@ -5768,6 +5768,7 @@ main (int argc, char **argv)
 {
 	int c;
 	FILE *f;
+	char *name;
 
 	setbuf (stdout, NULL);
 
@@ -5778,8 +5779,11 @@ main (int argc, char **argv)
 		}
 	}
 	
-	if ((f = fopen ("disk.img", "r")) == NULL) {
-		fprintf (stderr, "can't open disk image\n");
+	name = "disk.img";
+	if ((f = fopen (name, "r")) == NULL) {
+		fprintf (stderr,
+			 "can't open disk image %s (from usim project)\n",
+			 name);
 		exit (1);
 	}
 

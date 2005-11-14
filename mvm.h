@@ -1,4 +1,9 @@
-#include <opus/opus.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <ctype.h>
+#include <memory.h>
+#include <string.h>
 
 #define AMEM_ADDR 076776000
 #define AMEM_SIZE 02000
