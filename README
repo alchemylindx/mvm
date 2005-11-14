@@ -1,0 +1,8 @@
+You also need disk.img from the usim distribution.
+
+To checkout from sourceforge cvs:
+
+cvs -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/lispm login
+(just hit enter when prompted for password)
+
+cvs -z3 -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/lispm co -P mvm

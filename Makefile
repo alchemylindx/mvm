@@ -16,4 +16,4 @@ clean:
 	rm -f *.o *~ mksyms mvm syms.c syms.h TMP.c TMP.h
 
 tar:
-	tar -czf mvm.tar.gz Makefile *.[ch]
+	tar -czf mvm.tar.gz Makefile README ChangeLog *.[ch]

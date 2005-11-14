@@ -3344,10 +3344,47 @@ QICADR(void)
 	}
 }
 
-void QICDR(void) {ILLOP("QICDR unimp");}
+void
+QICDR(void) 
+{
+	fetch_arg ();
+
+	QCDR ();
+
+	// QMDTBD (note that D_MICRO needs to be added when doing return)
+	switch (current_macro_inst.macro_inst_reg.dest) {
+	case D_IGNORE:
+		break;
+	case D_PDL:
+	case D_NEXT:
+		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
+		break;
+
+	case D_LAST:
+		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
+		QMRCL (QLLV);
+		break;
+
+	case D_RETURN:
+		QMDDR (0);
+		break;
+
+	case D_NEXT_LIST:
+		ILLOP ("D-NEXT-LIST");
+		break;
+
+	default:
+		ILLOP ("bad dest");
+	}
+}
+
+
+
 void QICDDR(void) {ILLOP("QICDDR unimp");}
 void QICDAR(void) {ILLOP("QICDAR unimp");}
 void qi_unimp(void) {ILLOP("qi_unimp");}
+
+
 
 int
 get_branch_delta (void)
@@ -4327,6 +4364,47 @@ misc_dpb (void)
 	}
 }
 
+// (DEFMIC LDB 315 (PPSS WORD) T)
+
+// LDB can only extract from fixnums and bignums.  The target is considered to
+// have infinite sign extension.  LDB "should" always return a positive number.
+// This issue currently doesn't arise, since LDB is implemented only for
+// positive-fixnum-sized bytes, i.e. a maximum of 23. bits wide.  Note the
+// presence of %LOGLDB, which will load a 24-bit byte of a fixnum and return
+// it as a possibly-negative fixnum.
+void
+misc_ldb (void)
+{
+	Q ppss, len, pos;
+
+	// Only the second operand is processed via NUMARG.  Thus LDB
+	// is considered to be a one operand op.
+
+	A_A = ARITH_1ARG_LDB;
+	if (D_NUMARG (q_data_type (pdl_peek ())) == 0) {
+		ppss = pdl_pop ();
+
+		if (q_data_type (ppss) != dtp_fix)
+			trap ("fix");
+
+		len = get_field (ppss, 6, 0);
+		pos = get_field (ppss, POINTER_BITS - 6, 6);
+
+		if (len >= 24)
+			trap ("ldb");
+
+		while (pos + len > 32) {
+			pos--;
+			A_1 = (signed)A_1 >> 1;
+		}
+		
+		A_T = FIX_ZERO | get_field (A_1, len, pos);
+		return;
+	}
+
+	// else, bignum case, which D_NUMARG has already handled
+}
+
 void
 misc_lsh (void)
 {
@@ -4412,6 +4490,12 @@ misc_unibus_write (void)
 
 	switch (addr) {
 	case 0764112: /* in set-mouse-mode */
+
+		/* in write-unibus-map */
+	case 0766140: case 0766142: case 0766144: case 0766146:
+	case 0766150: case 0766152: case 0766154: case 0766156:
+	case 0766160: case 0766162: case 0766164: case 0766166:
+	case 0766170: case 0766172: case 0766174: case 0766176:
 		break;
 	default:
 		printf ("%%unibus-write unknown addr %#o\n", addr);
@@ -5200,6 +5284,57 @@ misc_copy_array_contents (void)
 	A_T = A_V_TRUE;
 }
 
+// (DEFMIC *BOOLE 352 (FN ARG1 ARG2) T)
+void
+misc_boole (void)
+{
+	// The 2nd arg of BOOLE becomes the A operand of the logical instruction.
+	// The 3rd arg becomes the M operand.
+	A_T = pdl_pop ();  // M operand - winds up in A_2 on right of exp
+	A_A = pdl_pop ();  // A operand - winds up in A_1 on left of exp
+	A_B = pdl_pop ();
+
+	if (q_data_type (A_B) != dtp_fix)
+		trap ("fix");
+
+	pdl_push (A_A); // Put arg back in standard place
+
+	if (D_NUMARG1 (q_data_type (pdl_peek ())) == 0) {
+		if (D_FIXNUM_NUMARG2 (q_data_type (A_T), NUMBER_CODE_FIXNUM) == 0) {
+			switch (A_B & 0xf) {
+			case 0: A_1 = 0; break; // SETZ
+			case 1: A_1 = A_1 & A_2; break; // AND
+			case 2: A_1 = ~A_1 & A_2; break; // ANDCA
+			case 3: A_1 = A_2; // SETM
+			case 4: A_1 = ~A_2; // ANDCM
+			case 5: A_1 = A_1; // SETA 
+			case 6: A_1 = A_1 ^ A_2; // XOR
+			case 7: A_1 = A_1 | A_2; // IOR
+			case 010: A_1 = ~A_1 & ~A_2; // ANDCB
+			case 011: A_1 = ~(A_1 ^ A_2); // EQV
+			case 012: A_1 = ~A_1; // SETCA
+			case 013: A_1 = ~A_1 | A_2; // ORCA
+			case 014: A_1 = ~A_2; // SETCM
+			case 015: A_1 = A_1 | ~A_2; // ORCM
+			case 016: A_1 = ~A_1 | ~A_2; // ORCB
+			case 017: A_1 = ~0; // SETO
+			}
+			A_T = make_pointer (dtp_fix, A_1);
+		}
+	}
+	// else, A_T already set by dispatch subroutine 
+}
+
+//(DEFMIC CADDR 253 (X) T)
+void
+misc_caddr (void)
+{
+	A_T = pdl_pop ();
+	QCDR ();
+	QCDR ();
+	QCAR ();
+}
+
 
 struct misc_func {
 	char *name;
@@ -5207,8 +5342,10 @@ struct misc_func {
 };
 
 struct misc_func misc_funcs[01000] = {
+	[0253] = { "CADDR", misc_caddr },
 	[0303] = { "%DATA-TYPE", misc_data_type },
 	[0314] = { "%LOGDPB", misc_logdpb },
+	[0315] = { "LDB", misc_ldb },
 	[0316] = { "DPB", misc_dpb },
 	[0317] = { "%P-STORE-TAG-AND-POINTER", misc_p_store_tag_and_pointer },
 	[0320] = { "GET", misc_get },
@@ -5222,6 +5359,7 @@ struct misc_func misc_funcs[01000] = {
 	[0335] = { "EQUAL", misc_equal },
 	[0337] = { "XSTORE", misc_xstore },
 	[0350] = { "LSH", misc_lsh },
+	[0352] = { "*BOOLE", misc_boole },
 	[0353] = { "NUMBERP", misc_numberp },
 	[0355] = { "MINUSP", misc_minusp },
 	[0361] = { "VALUE-CELL-LOCATION", misc_value_cell_location },
@@ -5306,6 +5444,20 @@ QIAND (void)
 }
 
 void
+QIIOR (void)
+{
+	A_A = ARITH_2ARG_BOOLE;
+	if (D_NUMARG1 (q_data_type (pdl_peek ())) == 0) {
+		if (D_FIXNUM_NUMARG2 (q_data_type (A_T), NUMBER_CODE_FIXNUM) == 0) {
+			A_T = make_pointer (dtp_fix, A_1 | A_2);
+			pdl_push (A_T | (CDR_NIL<<30));
+			return;
+		}
+	}
+	ILLOP ("QIAND");
+}
+
+void
 QIADD (void)
 {
 	A_A = ARITH_2ARG_ADD;
@@ -5325,11 +5477,31 @@ QIDIV (void)
 	A_A = ARITH_2ARG_DIV;
 	if (D_NUMARG1 (q_data_type (pdl_peek ())) == 0) {
 		if (D_FIXNUM_NUMARG2 (q_data_type (A_T), NUMBER_CODE_FIXNUM) == 0) {
+			A_1 = (signed)A_1 / (signed)A_2;
 			FIXPACK_P ();
 			return;
 		}
 	}
 	ILLOP ("QIDIV");
+}
+
+void
+QIMUL (void)
+{
+	A_A = ARITH_2ARG_DIV;
+	if (D_NUMARG1 (q_data_type (pdl_peek ())) == 0) {
+		if (D_FIXNUM_NUMARG2 (q_data_type (A_T), NUMBER_CODE_FIXNUM) == 0) {
+			long long val;
+			val = (long long)A_1 * (long long)A_2;
+			if (MOST_NEGATIVE_FIXNUM <= val && val <= MOST_POSITIVE_FIXNUM) {
+				A_1 = val;
+				FIXPACK_P ();
+				return;
+			}
+			ILLOP ("QIMUL overflow");
+		}
+	}
+	ILLOP ("QIMUL");
 }
 
 void
@@ -5343,11 +5515,11 @@ QIND1(void)
 	case 0: ILLOP ("qind1");
 	case 1:	QIADD (); break; 
 	case 2: ILLOP ("qind1"); //(QISUB)
-	case 3: ILLOP ("qind1"); //(QIMUL)
-	case 4: QIDIV (); break; //(QIDIV)
+	case 3: QIMUL (); break;
+	case 4: QIDIV (); break;
 	case 5:	QIAND (); break;
 	case 6: ILLOP ("qind1"); //(QIXOR)
-	case 7: ILLOP ("qind1"); //(QIIOR)
+	case 7: QIIOR (); break;
 	}
 }
 
