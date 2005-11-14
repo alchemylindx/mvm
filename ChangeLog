@@ -1,0 +1,118 @@
+2005-11-12    <pace@lap.pacew.com>
+
+	* V27
+
+	* copy-array-contents
+
+	* V26
+	
+	* CALL_SELECT_METHOD
+
+	* V25
+	
+	* CALL_INSTANCE
+
+	* V24
+
+	* throw; inst 14577
+
+2005-11-11    <pace@lap.pacew.com>
+
+	* V23
+
+	* inst 14546
+	
+	* V22
+
+	* equal, string-equal 
+
+	* V21
+	
+	* stack group switches; inst 14456
+
+	* V20
+
+	* ready to call error stack group; inst 14324
+
+	* V19
+	
+	* rest args
+
+	* V18
+
+	* inst 14278
+
+2005-11-08    <pace@lap.pacew.com>
+
+	* V17
+
+	* V16
+	
+	* inst 13079
+
+	* V15
+	
+	* got to first loop... now up to inst 3776.
+
+	* V14
+	
+	* displaced q arrays
+
+	* V13 
+
+	* (from oct 27)
+
+2005-10-26    <pace@lap.pacew.com>
+
+	* V12
+
+	* inst 143, array ref
+
+2005-10-25    <pace@lap.pacew.com>
+
+	* V11
+
+	* V10
+
+	* V9
+
+	* inst 62
+
+2005-10-24    <pace@lap.pacew.com>
+
+	* V8
+
+	* up to inst 54
+
+2005-10-23    <pace@lap.pacew.com>
+
+	* V7
+
+	* up to inst 18
+
+	* V6
+	
+	* first misc instruction; 7 inst executed
+
+2005-10-22    <pace@lap.pacew.com>
+
+	* V5
+	
+	* initialize A memory; make one-q-forward to a memory work
+
+	* V4
+	
+	* runs 3 inst; does first call
+
+	* V3
+	
+	* QAQT done... middle of 2nd macro inst
+
+	* V2
+
+	* one macro instruction executed; baby cc program; disassemble
+	
+2005-10-21    <pace@lap.pacew.com>
+
+	* V1
+
