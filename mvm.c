@@ -3615,8 +3615,8 @@ misc_memq (void)
 	Q haystack;
 
 	// XMEMQ 
-	needle = q_typed_pointer (pdl_pop ());
 	haystack = q_typed_pointer (pdl_pop ());
+	needle = q_typed_pointer (pdl_pop ());
 
 	XMEMQ1 (needle, haystack);
 }
@@ -4144,6 +4144,21 @@ misc_instance_ref (void)
 	A_T = q_typed_pointer (vmread_transport (A_T));
 }
 
+// (DEFMIC %INSTANCE-SET 522 (VAL INSTANCE INDEX) T)
+void
+misc_instance_set (void)
+{
+	misc_instance_loc ();
+	A_S = A_T;
+	A_T = pdl_pop ();
+
+	vmread_transport_write (A_S);
+	md = (md & ~Q_TYPED_POINTER) | q_typed_pointer (A_T);
+	vmwrite_gc_write_test (vma, md);
+	// NO SEQ BRK, CALLED BY MVR (???)
+	A_T = A_S;
+}
+
 #define MOST_NEGATIVE_FIXNUM (-1<<23)
 #define MOST_POSITIVE_FIXNUM ((1<<23)-1)
 
@@ -4248,6 +4263,16 @@ misc_symeval (void)
 		trap ("ARGTYP SYMBOL PP T XSYME2");
 
 	A_T = q_typed_pointer (vmread_transport (pdl_pop () + sym_value));
+}
+
+// (DEFMIC FSYMEVAL 600 (SYMBOL) T)
+void
+misc_fsymeval (void)
+{
+	if (q_data_type (pdl_peek ()) != dtp_symbol)
+		trap ("ARGTYP SYMBOL PP T XSYME2");
+
+	A_T = q_typed_pointer (vmread_transport (pdl_pop () + sym_function));
 }
 
 void
@@ -5116,7 +5141,7 @@ misc_length (void)
 	A_A = A_T;
 
 	// XTLENG
-	if (q_data_type (A_T) != dtp_list)
+	if (q_data_type (A_T) != dtp_list && A_T != A_V_NIL)
 		trap ("M-T A-V-NIL TRAP");
 
 	count = FIX_ZERO;
@@ -5192,6 +5217,18 @@ misc_open_call_block (void)
 	idx = pdl_top + LP_CALL_STATE;
 	pdl_store (idx, pdl_ref (idx) | LP_CLS_ADI_PRESENT);
 }
+
+// (DEFMIC %ACTIVATE-OPEN-CALL-BLOCK 535 () NIL)
+void
+misc_activate_open_call_block (void)
+{
+	// Fix CDR-code of last arg then activate call	
+	pdl_store (pdl_top,
+		   (pdl_ref (pdl_top) & ~Q_CDR_CODE)
+		   | (CDR_NIL << 30));
+	QMRCL (QLLV);
+}
+
 
 Q
 get_fill_val (Q hdr)
@@ -5335,6 +5372,117 @@ misc_caddr (void)
 	QCAR ();
 }
 
+// (DEFMIC %ARGS-INFO 532 (FUNCTION) T)
+void
+misc_args_info (void)
+{
+	qfields result;
+	Q tem, ndim;
+
+	// FUNCTION CAN BE ANYTHING MEANINGFUL IN FUNCTION
+	// CONTEXT. RETURNS FIXNUM.  FIELDS AS IN
+	// NUMERIC-ARG-DESC-INFO IN QCOM.
+	// XARGI
+
+	A_S = pdl_pop ();
+
+	result.all = FIX_ZERO;
+	result.numarg.max_args = ~0;
+	result.numarg.interpreted = 1;
+
+
+	// ENTER HERE FROM APPLY, ALSO REENTER TO TRY AGAIN (CLOSURE, ETC).
+	// XARGI0
+
+top:
+	A_S = q_typed_pointer (A_S);
+
+	A_T = result.all;
+
+	switch (q_data_type (A_S)) {
+	case dtp_trap:
+	case dtp_free:
+	case dtp_symbol_header:
+	case dtp_header:
+	case dtp_gc_forward:
+	case dtp_external_value_cell_pointer:
+	case dtp_one_q_forward:
+	case dtp_header_forward:
+	case dtp_body_forward:
+	case dtp_list:
+	case dtp_array_header:
+	case dtp_instance_header:
+		ILLOP ("args-info");
+		
+	case dtp_null:
+	case dtp_fix:
+	case dtp_extended_number:
+	case dtp_locative:
+	case dtp_small_flonum:
+		return;
+
+	case dtp_select_method:
+		// CAN'T SAY WITHOUT KEY SO BE CONSERVATIVE
+		return;
+
+	case dtp_instance:
+		// INSTANCE: (COULD GET FUNCTION BUT WHY BOTHER
+		// SINCE IT WILL BE A SELECT-METHOD ANYWAY)
+		return;
+
+	case dtp_symbol:
+		// replace with fctn cell
+		A_S = vmread_transport (A_S + sym_function);
+		goto top;
+
+	case dtp_u_code_entry:
+		tem = vmread_transport (A_V_MICRO_CODE_ENTRY_AREA + A_S);
+		if (q_data_type (tem != dtp_fix)) {
+			A_S = tem;
+			goto top;
+		}
+
+		vmread_transport (A_V_MICRO_CODE_ENTRY_ARGS_INFO_AREA + A_S);
+		A_T = q_typed_pointer (md);
+		return;
+			
+	case dtp_fef_pointer:
+		A_T = vmread_transport (A_S + FEFHI_FAST_ARG_OPT);
+		A_T = q_typed_pointer (A_T);
+		return;
+
+	case dtp_array_pointer:
+		tem = vmread_transport_header (A_S);
+		ndim = get_field (tem,
+				  ARRAY_NUMBER_OF_DIMENSIONS_len,
+				  ARRAY_NUMBER_OF_DIMENSIONS_pos);
+		result.all = FIX_ZERO;
+		result.numarg.min_args = ndim;
+		result.numarg.max_args = ndim;
+		A_T = result.all;
+		return;
+
+	case dtp_stack_group:
+		// STACK GROUP ACCEPTS ANY NUMBER OF EVALED ARGS
+		result.all = FIX_ZERO;
+		result.numarg.min_args = 0;
+		result.numarg.max_args = ~0;
+		return;
+
+	case dtp_closure:
+	case dtp_entity:
+	case dtp_stack_closure:
+		A_T = make_pointer (dtp_list, A_S);
+		QCAR ();
+		A_S = A_T;
+		goto top;
+
+	}
+
+	ILLOP ("args_info");
+}
+
+
 
 struct misc_func {
 	char *name;
@@ -5376,9 +5524,13 @@ struct misc_func misc_funcs[01000] = {
 	[0515] = { "AS-1", misc_as_1 },
 	[0520] = { "%INSTANCE-REF", misc_instance_ref },
 	[0521] = { "%INSTANCE-LOC", misc_instance_loc },
+	[0522] = { "%INSTANCE-SET", misc_instance_set },
+
 	[0527] = { "%P-CONTENTS-OFFSET", misc_p_contents_offset },
+	[0532] = { "%ARGS-INFO", misc_args_info },
 	[0533] = { "%OPEN-CALL-BLOCK", misc_open_call_block },
 	[0534] = { "%PUSH", misc_push },
+	[0535] = { "%ACTIVATE-OPEN-CALL-BLOCK",misc_activate_open_call_block},
 	[0536] = { "%ASSURE-PDL-ROOM", misc_assure_pdl_room },
 	[0542] = { "STACK-GROUP-RESUME", misc_stack_group_resume },
 	[0556] = { "%UNIBUS-WRITE", misc_unibus_write },
@@ -5387,6 +5539,7 @@ struct misc_func misc_funcs[01000] = {
 	[0574] = { "FBOUNDP", misc_fboundp },
 	[0575] = { "STRINGP", misc_stringp },
 	[0576] = { "BOUNDP", misc_boundp },
+	[0600] = { "FSYMEVAL", misc_fsymeval },
 	[0605] = { "%P-LDB-OFFSET", misc_p_ldb_offset },
 	[0624] = { "%24-BIT-PLUS", misc_24_bit_plus },
 	[0632] = { "%P-CONTENTS-AS-LOCATIVE-OFFSET", misc_p_contents_as_locative_offset },
@@ -5837,7 +5990,7 @@ QMLP (void)
 
 	macro_count++;
 
-	if (macro_count >= 14538) {
+	if (macro_count >= 17300) {
 		dflags = -1;
 	}
 
