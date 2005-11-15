@@ -512,4 +512,30 @@ struct sym adi_kinds_desc[] = {
 	{ "ADI-USED-UP-RETURN-INFO", 7 },
 };
 
+struct sym region_space_type_desc[] = {
+	{ "REGION-SPACE-FREE",  0 },
+	{ "REGION-SPACE-OLD", 1 },
+	{ "REGION-SPACE-NEW", 2	},
+	{ "REGION-SPACE-STATIC", 3 },
+	{ "REGION-SPACE-FIXED", 4 },
+	{ "REGION-SPACE-EXITED", 5 },
+	{ "REGION-SPACE-EXIT", 6 },
+	{ "REGION-SPACE-EXTRA-PDL", 7 },
+	{ "REGION-SPACE-WIRED", 10 },
+	{ "REGION-SPACE-USER-PAGED", 11 },
+	{ "REGION-SPACE-COPY", 12 },
+};
+
+struct sym region_bits_desc[] = {
+	{ "REGION-OLDSPACE-META-BIT", 023 },
+	{ "REGION-EXTRA-PDL-META-BIT", 022 },
+	{ "REGION-REPRESENTATION-TYPE_pos", 020 },
+	{ "REGION-REPRESENTATION-TYPE_len", 2 },
+	{ "REGION-SPACE-TYPE-pos", 011 },
+	{ "REGION-SPACE-TYPE-len", 4 },
+	{ "REGION-REPRESENTATION-TYPE-LIST", 0 },
+	{ "REGION-REPRESENTATION-TYPE-STRUCTURE", 1 },
+
+};
+
 #endif /* _SYMDESC_H_ */

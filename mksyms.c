@@ -161,6 +161,8 @@ main (int argc, char **argv)
 	SYMS (sg_states);
 	SYMS (adi_fields);
 	SYMS (adi_kinds);
+	SYMS (region_space_type);
+	SYMS (region_bits);
 
 	do_usyms ("ucadr.sym.841");
 

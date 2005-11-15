@@ -8,6 +8,8 @@
 #define AMEM_ADDR 076776000
 #define AMEM_SIZE 02000
 
+#define SIZE_OF_AREA_ARRAYS 377
+
 #include "syms.h"
 
 

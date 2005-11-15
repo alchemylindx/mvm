@@ -5482,6 +5482,165 @@ top:
 	ILLOP ("args_info");
 }
 
+void
+SCAV0 (void)
+{
+}
+
+void
+SCAVT (void)
+{
+}
+
+// DECODE AREA SPEC IN M-S.  RETURN FIXNUM, WITH DATA-TYPE, IN M-S.
+// THIS CAN CALL TRAP OR JUMP TO IT, THUS CALLER MUST HAVE (ERROR-TABLE ARGTYP AREA M-S NIL)
+// M-S MUST HAVE DATA-TYPE AND NO CDR-CODE/FLAG.
+Q
+CONS_GET_AREA (Q area)
+{
+	if (q_data_type (area) == dtp_symbol)
+		area = vmread_transport (area + sym_value);
+	if (q_data_type (area) != dtp_fix)
+		trap ("ARGTYP AREA M-S NIL CONS-GET-AREA");
+	if (q_pointer (area) > SIZE_OF_AREA_ARRAYS)
+		trap ("cons-get-area");
+	return (area);
+}
+
+Q
+lcons_cache (Q area, Q size)
+{
+	Q result;
+
+	if (A_FLAGS & M_FLAGS_TRANSPORT)
+		return (A_V_NIL); // Transporter must avoid cache
+	
+	if (area != A_LCONS_CACHE_AREA)
+		return (A_V_NIL);
+
+	if (A_LCONS_CACHE_FREE_POINTER + size > A_LCONS_CACHE_FREE_LIMIT)
+		return (A_V_NIL);
+
+	result = A_LCONS_CACHE_FREE_POINTER; // Allocate it here
+	A_LCONS_CACHE_FREE_POINTER += size;
+	
+	SCAV0 ();
+
+	return (result);
+}
+
+void
+LCONS5 (void)
+{
+	ILLOP ("LCONS5");
+}
+
+// area is M-S; size is M-B
+Q
+lcons (Q area, Q size)
+{
+	Q result;
+	Q region, region_bits;
+	Q type, rep;
+	Q region_length;
+	Q old_free_pointer, new_free_pointer;
+	Q region_origin;
+
+	if (area == A_V_NIL)
+		area = q_typed_pointer (A_CNSADF);
+
+	if (size <= 0)
+		trap ("CONS-ZERO-SIZE M-B");
+
+	if ((result = lcons_cache (area, size)) != A_V_NIL)
+		return (result);
+
+	area = CONS_GET_AREA (area);
+	region = q_pointer (vmread (A_V_AREA_REGION_LIST + area));
+
+keep_going:
+	while ((region & BOXED_SIGN_BIT) == 0) {
+		region_bits = vmread (A_V_REGION_BITS + region);
+		type = get_field (region_bits,
+				  REGION_SPACE_TYPE_len,
+				  REGION_SPACE_TYPE_pos);
+		rep = get_field (region_bits,
+				 REGION_REPRESENTATION_TYPE_len,
+				 REGION_REPRESENTATION_TYPE_pos);
+		
+		if (rep == REGION_REPRESENTATION_TYPE_LIST) {
+			switch (type) {
+			case REGION_SPACE_FREE:
+				ILLOP ("bad region");
+				
+			case REGION_SPACE_OLD:
+				break;
+
+			case REGION_SPACE_NEW:
+				if ((A_FLAGS & M_FLAGS_TRANSPORT) == 0)
+					goto win;
+				break;
+				
+			case REGION_SPACE_COPY:
+				if ((A_FLAGS & M_FLAGS_TRANSPORT) != 0)
+					goto win;
+				break;
+				
+			default:
+				ILLOP ("cons: unknown region space type");
+			}
+		}
+			
+		region = vmread (A_V_REGION_LIST_THREAD + region);
+	}
+
+	LCONS5 ();
+
+win:
+
+	// CONSF
+	//This region is the right type, see if adequate free space, if so do it.
+	region_length = q_pointer (vmread (A_V_REGION_LENGTH + region));
+	old_free_pointer = q_pointer (vmread (A_V_REGION_FREE_POINTER + region));
+	new_free_pointer = old_free_pointer + size; // Proposed new free pointer
+	if (new_free_pointer > region_length) {
+		region = vmread (A_V_REGION_LIST_THREAD + region);
+		goto keep_going;
+	}
+
+	region_origin = q_pointer (vmread (A_V_REGION_ORIGIN + region));
+	result = q_pointer (region_origin + old_free_pointer);
+
+	if ((A_FLAGS & M_FLAGS_TRANSPORT) == 0) {
+		A_LCONS_CACHE_AREA = area;
+		A_LCONS_CACHE_REGION = region;
+		A_LCONS_CACHE_REGION_ORIGIN = region_origin;
+		A_LCONS_CACHE_FREE_POINTER = region_origin + new_free_pointer;
+		A_LCONS_CACHE_FREE_LIMIT = region_origin + region_length;
+
+		SCAV0 ();
+	} else {
+		SCAVT ();
+	}
+
+	return (result);
+}
+
+// (DEFMIC CONS 366 (X Y) T)
+void
+misc_cons (void)
+{
+	Q carval, cdrval;
+	A_T = lcons (A_CNSADF, 2); // default cons area
+
+	cdrval = q_typed_pointer (pdl_pop ());
+	carval = q_typed_pointer (pdl_pop ());
+
+	vmwrite_gc_write_test (A_T, carval | (CDR_NORMAL<<30));
+	vmwrite_gc_write_test (A_T+1, cdrval | (CDR_ERROR<<30));
+
+	A_T = make_pointer (dtp_list, A_T);
+}
 
 
 struct misc_func {
@@ -5512,6 +5671,7 @@ struct misc_func misc_funcs[01000] = {
 	[0355] = { "MINUSP", misc_minusp },
 	[0361] = { "VALUE-CELL-LOCATION", misc_value_cell_location },
 	[0362] = { "FUNCTION-CELL-LOCATION", misc_function_cell_location },
+	[0366] = { "CONS", misc_cons },
 	[0373] = { "SYMEVAL", misc_symeval },
 	[0410] = { "MEMQ", misc_memq },
 	[0417] = { "NTH", misc_nth },
