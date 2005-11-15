@@ -25,6 +25,7 @@ void QMDDR (int QMDDR0_flag);
 void QBND4 (Q addr);
 void D_QMRCL (void (*leave)(void));
 void XMEMQ1 (Q needle, Q haystack);
+void QIGRP (void);
 
 struct qfields_common {
 	unsigned int pointer : 24;
@@ -3638,6 +3639,32 @@ XMEMQ1 (Q needle, Q haystack)
 	}
 }
 
+// (DEFMIC ASSQ 322 (X ALIST) T)
+void
+misc_assq (void)
+{
+	Q alist, key, pair;
+
+	alist = q_typed_pointer (pdl_pop ());
+	key = q_typed_pointer (pdl_pop ());
+
+	while (alist != A_V_NIL) {
+		A_T = alist;
+		QCAR ();
+		pair = A_T;
+		QCAR ();
+		if (A_T == key) {
+			A_T = pair;
+			return;
+		}
+		A_T = alist;
+		QCDR ();
+		alist = A_T;
+	}
+
+	A_T = A_V_NIL;
+}
+
 void
 misc_numberp (void)
 {
@@ -5362,15 +5389,43 @@ misc_boole (void)
 	// else, A_T already set by dispatch subroutine 
 }
 
-//(DEFMIC CADDR 253 (X) T)
-void
-misc_caddr (void)
-{
-	A_T = pdl_pop ();
-	QCDR ();
-	QCDR ();
-	QCAR ();
-}
+void misc_car (void) {  A_T = pdl_pop(); QCAR(); }
+void misc_cdr (void) {  A_T = pdl_pop(); QCDR(); }
+
+void misc_caar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); }
+void misc_cadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); }
+void misc_cdar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); }
+void misc_cddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); }
+
+void misc_caaar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); QCAR(); }
+void misc_caadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); QCAR(); }
+void misc_cadar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); QCAR(); }
+void misc_caddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCAR(); }
+void misc_cdaar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); QCDR(); }
+void misc_cdadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); QCDR(); }
+void misc_cddar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); QCDR(); }
+void misc_cdddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCDR(); }
+
+void misc_caaaar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); QCAR(); QCAR(); }
+void misc_caaadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); QCAR(); QCAR(); }
+void misc_caadar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); QCAR(); QCAR(); }
+void misc_caaddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCAR(); QCAR(); }
+void misc_cadaar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); QCDR(); QCAR(); }
+void misc_cadadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); QCDR(); QCAR(); }
+void misc_caddar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); QCDR(); QCAR(); }
+void misc_cadddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCDR(); QCAR(); }
+
+void misc_cdaaar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); QCAR(); QCDR(); }
+void misc_cdaadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); QCAR(); QCDR(); }
+void misc_cdadar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); QCAR(); QCDR(); }
+void misc_cdaddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCAR(); QCDR(); }
+void misc_cddaar (void) {  A_T = pdl_pop(); QCAR(); QCAR(); QCDR(); QCDR(); }
+void misc_cddadr (void) {  A_T = pdl_pop(); QCDR(); QCAR(); QCDR(); QCDR(); }
+void misc_cdddar (void) {  A_T = pdl_pop(); QCAR(); QCDR(); QCDR(); QCDR(); }
+void misc_cddddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCDR(); QCDR(); }
+
+
+
 
 // (DEFMIC %ARGS-INFO 532 (FUNCTION) T)
 void
@@ -5642,6 +5697,27 @@ misc_cons (void)
 	A_T = make_pointer (dtp_list, A_T);
 }
 
+// (DEFMIC (> . M->) 412 (NUM1 NUM2) T)
+void
+misc_greater (void)
+{
+	A_T = pdl_pop ();
+	QIGRP ();
+}
+
+// (DEFMIC (EQ . M-EQ) 633 (X Y) T)
+void
+misc_eq (void)
+{
+	Q x, y;
+
+	x = q_typed_pointer (pdl_pop ());
+	y = q_typed_pointer (pdl_pop ());
+	if (x == y)
+		A_T = A_V_TRUE;
+	else
+		A_T = A_V_NIL;
+}
 
 struct misc_func {
 	char *name;
@@ -5649,15 +5725,46 @@ struct misc_func {
 };
 
 struct misc_func misc_funcs[01000] = {
+	[0242] = { "CAR", misc_car }, 
+	[0243] = { "CDR", misc_cdr },
+	[0244] = { "CAAR", misc_caar },
+	[0245] = { "CADR", misc_cadr },
+	[0246] = { "CDAR", misc_cdar },
+	[0247] = { "CDDR", misc_cddr },
+	[0250] = { "CAAAR", misc_caaar },
+	[0251] = { "CAADR", misc_caadr },
+	[0252] = { "CADAR", misc_cadar },
 	[0253] = { "CADDR", misc_caddr },
+	[0254] = { "CDAAR", misc_cdaar },
+	[0255] = { "CDADR", misc_cdadr },
+	[0256] = { "CDDAR", misc_cddar },
+	[0257] = { "CDDDR", misc_cdddr },
+	[0260] = { "CAAAAR", misc_caaaar },
+	[0261] = { "CAAADR", misc_caaadr },
+	[0262] = { "CAADAR", misc_caadar },
+	[0263] = { "CAADDR", misc_caaddr },
+	[0264] = { "CADAAR", misc_cadaar },
+	[0265] = { "CADADR", misc_cadadr },
+	[0266] = { "CADDAR", misc_caddar },
+	[0267] = { "CADDDR", misc_cadddr },
+	[0270] = { "CDAAAR", misc_cdaaar },
+	[0271] = { "CDAADR", misc_cdaadr },
+	[0272] = { "CDADAR", misc_cdadar },
+	[0273] = { "CDADDR", misc_cdaddr },
+	[0274] = { "CDDAAR", misc_cddaar },
+	[0275] = { "CDDADR", misc_cddadr },
+	[0276] = { "CDDDAR", misc_cdddar },
+	[0277] = { "CDDDDR", misc_cddddr },
 	[0303] = { "%DATA-TYPE", misc_data_type },
 	[0314] = { "%LOGDPB", misc_logdpb },
 	[0315] = { "LDB", misc_ldb },
 	[0316] = { "DPB", misc_dpb },
 	[0317] = { "%P-STORE-TAG-AND-POINTER", misc_p_store_tag_and_pointer },
 	[0320] = { "GET", misc_get },
+	[0322] = { "ASSQ", misc_assq },
 	[0323] = { "LAST", misc_last },
 	[0342] = { "NOT", misc_not },
+	[0322] = { "ASSQ", misc_assq },
 	[0324] = { "LENGTH", misc_length },
 	[0325] = { "1+", misc_one_plus },
 	[0326] = { "1-", misc_one_minus },
@@ -5674,6 +5781,7 @@ struct misc_func misc_funcs[01000] = {
 	[0366] = { "CONS", misc_cons },
 	[0373] = { "SYMEVAL", misc_symeval },
 	[0410] = { "MEMQ", misc_memq },
+	[0412] = { ">", misc_greater },
 	[0417] = { "NTH", misc_nth },
 	[0430] = { "ARRAY-LEADER", misc_array_leader },
 	[0431] = { "STORE-ARRAY-LEADER", misc_store_array_leader },
@@ -5685,7 +5793,6 @@ struct misc_func misc_funcs[01000] = {
 	[0520] = { "%INSTANCE-REF", misc_instance_ref },
 	[0521] = { "%INSTANCE-LOC", misc_instance_loc },
 	[0522] = { "%INSTANCE-SET", misc_instance_set },
-
 	[0527] = { "%P-CONTENTS-OFFSET", misc_p_contents_offset },
 	[0532] = { "%ARGS-INFO", misc_args_info },
 	[0533] = { "%OPEN-CALL-BLOCK", misc_open_call_block },
@@ -5703,11 +5810,9 @@ struct misc_func misc_funcs[01000] = {
 	[0605] = { "%P-LDB-OFFSET", misc_p_ldb_offset },
 	[0624] = { "%24-BIT-PLUS", misc_24_bit_plus },
 	[0632] = { "%P-CONTENTS-AS-LOCATIVE-OFFSET", misc_p_contents_as_locative_offset },
+	[0633] = { "EQ", misc_eq },
 	[0637] = { "%XBUS-READ", misc_xbus_read },
 	[0640] = { "%XBUS-WRITE", misc_xbus_write },
-
-
-
 };
 
 void
@@ -5909,6 +6014,16 @@ QISP1 (void)
 }
 
 void
+QISM1 (void)
+{
+	// SETE-1-
+	pdl_push (A_T);
+	X1MNS ();
+	A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+	QADCM2 ();
+}
+
+void
 QIEQ (void)
 {
 	Q a, b;
@@ -5934,7 +6049,7 @@ QIND2(void)
 	case 4: SETE_CDR (); break; // SETE-CDR  QISCDR
 	case 5: ILLOP("QIND2"); // SETE-CDDR QISCDDR
 	case 6: QISP1 (); break; // SETE-1+  QISP1
-	case 7: ILLOP("QIND2"); // SETE-1-  QISM1
+	case 7: QISM1 (); break; // SETE-1-  QISM1
 	}
 }
 
