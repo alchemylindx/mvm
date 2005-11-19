@@ -1,8 +1,3 @@
-// search for
-// XXX buggy...
-
-
-
 /*
  * in function call stuff M-S is really A_IPMARK - see start of QMRCL in ucadr
  */
@@ -1531,6 +1526,8 @@ void QRAD1 (void) {ILLOP ("QRAD1");}
 void
 DSP_ARRAY_SETUP (void)
 {
+	Q orig_array_type, last_nelts;
+
 	// CALL WITH ARRAY POINTER IN M-A, HEADER IN M-B, 
 	// FIRST DATA ELEM IN M-E, DESIRED ELEMENT NUMBER IN M-Q.
 	// RETURNS WITH DATA ORIGIN IN M-E, M-S CHANGED TO REFLECT ARRAY
@@ -1549,11 +1546,66 @@ DSP_ARRAY_SETUP (void)
 		return;
 
 	/* else, indirect array */
-	/* goto QDACMP */
 
-	// XXX buggy...
-	return;
-	ILLOP ("unimp");
+	// Operation of QDACMP:
+	// The word just read from memory is the array-pointer to indirect to
+	// M-Q has entry number desired
+	// QDACMP pushes the info relative to the indirect array (M-A, M-B, M-D).
+	// M-E eventually gets the data base of the pointed-to array.
+	// M-S gets MIN(M-S from indirect array + index offset, index length of pointed-to array).
+	// In the process, M-Q will be adjusted if an index offset is encountered.
+	// After the final data base is determined, M-A, M-B, and M-D are restored.
+	// QDACMP
+	pdl_push (arr_base);
+	pdl_push (arr_hdr);
+	pdl_push (arr_ndim);
+
+	// SAVE ARRAY-TYPE OF ORIGINALLY REF'ED ARRAY THIS MUST BE IN 0@PP BELOW
+	
+	orig_array_type = ldb (ARRAY_TYPE_FIELD, arr_hdr);
+
+	while (1) {
+		arr_base = arr_data; // POINTED-TO ARRAY
+	
+		if (arr_base & Q_FLAG_BIT) {
+			// index offset
+			arr_ndim = vmread_transport (arr_data + 2);
+			if (q_data_type (arr_ndim) != dtp_fix)
+				trap ("DATA-TYPE-SCREWUP ARRAY");
+			arr_ndim = q_pointer (arr_ndim); // FETCH INDEX OFFSET
+			arr_nelts += arr_ndim; // ADJUST INDEX LIMIT
+			arr_idx += arr_ndim; // ADJUST CURRENT INDEX
+		}
+		
+		last_nelts = arr_nelts; // SAVE POINTER'S INDEX LENGTH
+		gahd1 ();
+		
+		// NOW TAKE MINIMUM OF THE TWO LENGTHS
+		if (ldb (ARRAY_DISPLACED_BIT, arr_hdr)) {
+			// DOUBLE DISPLACE, GET CORRECT LENGTH
+			arr_nelts = q_pointer (vmread (arr_data + 1));
+		}
+
+		// CHECK IF SAME ARRAY-TYPE AS ORIG REF. if not, ORIG MUST CONTROL
+		if (ldb (ARRAY_TYPE_FIELD, arr_hdr) != orig_array_type
+		    || last_nelts < arr_nelts)
+			arr_nelts = last_nelts;
+
+		if (ldb (ARRAY_DISPLACED_BIT, arr_hdr) == 0)
+			break;
+
+		// FURTHER INDIR
+		A_TEM = vmread_transport (arr_data);
+		if (q_data_type (A_TEM) != dtp_array_pointer) {
+			arr_data = q_pointer (A_TEM); // JUST DISPLACED
+			break;
+		}
+	}
+
+	// GOT ALL INFO, RESTORE 
+	arr_ndim = pdl_pop ();
+	arr_hdr = pdl_pop ();
+	arr_base = pdl_pop ();
 }
 
 
