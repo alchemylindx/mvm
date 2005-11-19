@@ -1,0 +1,57 @@
+/*
+ * M-INST-DEST      macro_inst.dest    or   macro_inst_reg.dest
+ * M-INST-OP        macro_inst.op      or   macro_inst_reg.op
+ * M-INST-ADR       macro_inst.offset
+ * M-INST-REGISTER                          macro_inst_reg.reg
+ * M-INST-DELTA                             macro_inst_reg.reg_offset
+ */
+ 
+  (disassemble si:%initial-fef)
+24 CALL D-IGNORE FEF|8 ;#'LISP-REINITIALIZE
+25 MOVE D-LAST 'NIL
+26 CALL D-IGNORE FEF|9 ;#'SI:LISP-TOP-LEVEL1
+27 MOVE D-PDL FEF|7 ;TV:INITIAL-LISP-LISTENER
+30 BR-NOT-NIL-POP 32
+31 MOVE D-PDL FEF|6 ;TERMINAL-IO
+32 MOVE D-LAST PDL-POP
+33 BR 26
+34 (MISC) FALSE D-RETURN
+
+si:lisp-reinitialize
+initial pc 624 halfwords
+fast arg option not active
+local block length 10
+total storage length 620
+no specials
+there is an ADL 14 long starting at 130
+
+...
+627 MOVE D-PDL FEF|101 ;'SYS:AMEM-EVCP-VECTOR
+630 (MISC) BOUNDP D-IGNORE
+631 BR-NOT-NIL 642
+...
+642 MOVE D-IGNORE ARG|0 ;CALLED-BY-USER
+643 BR-NOT-NIL 705
+644 MOVE D-PDL FEF|106 ;'COMPILER:MA-RESET sym 1465313, FEF-POINTER at 2236125
+645 (MISC) FBOUNDP D-IGNORE
+646 BR-NIL 650
+657 CALL0 D-IGNORE FEF|107 ;#'COMPILER:MA-RESET
+650 MOVE D-PDL FEF|108 ;'TV:DEFAULT-SCREEN
+
+
+
+
+lap$ od -tx1 ucadr.mcr.841 | head -6
+0000000 00 00 01 00 00 00 00 00 00 00 c5 28 00 00 00 08
+0000020 00 00 a7 04 00 00 00 00 00 00 00 90 00 00 00 08
+0000040 01 00 a7 20 00 00 00 00 00 00 00 00 00 00 00 00
+0000060 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 08
+0000100 00 9c 63 60 00 00 03 00 00 9c cb 10 00 00 00 08
+0000120 7c 02 27 31 00 00 60 01 80 00 28 10 00 00 00 08
+
+0000: 01 00 00 00 00 00 00 00 c5 28 00 00 00 08 00 00   ........E(......
+0010: a7 04 00 00 00 00 00 00 00 90 00 00 00 08 00 00   '...............
+0020: a7 20 01 00 00 00 00 00 00 00 00 00 00 00 00 00   ' ..............
+0030: 00 00 00 00 00 00 00 00 00 00 00 00 02 08 00 00   ................
+0040: 63 60 00 9c 03 00 00 00 cb 10 00 9c 00 08 00 00   c`......K.......
+0050: 27 31 7c 02 60 01 00 00 28 10 80 00 00 08 00 00   '1|.`...(.......

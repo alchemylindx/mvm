@@ -129,7 +129,6 @@ main (int argc, char **argv)
 	fprintf (cf, "\n");
 
 	SYMS (data_type_numbers);
-	SYMS (data_types);
 	SYMS (sys_com);
 	SYMS (array_header_fields);
 	SYMS (stack_group_qs);
@@ -144,6 +143,7 @@ main (int argc, char **argv)
 	SYMS (m_flags);
 	SYMS (header_types);
 	SYMS (fefhi);
+	SYMS (fefhi2);
 	SYMS (error_substatus);
 
 	SYMS (fef_specialness);
@@ -152,7 +152,6 @@ main (int argc, char **argv)
 	SYMS (fef_arg_syntax);
 	SYMS (fef_init_option);
 	SYMS (symbol);
-	SYMS (fefhi_sv_bitmap);
 	SYMS (arith_1arg);
 	SYMS (instance_descriptor);
 	SYMS (arith_2arg);
@@ -163,6 +162,8 @@ main (int argc, char **argv)
 	SYMS (adi_kinds);
 	SYMS (region_space_type);
 	SYMS (region_bits);
+	SYMS (arg_desc);
+	SYMS (numarg);
 
 	do_usyms ("ucadr.sym.841");
 

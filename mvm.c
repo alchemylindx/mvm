@@ -1,3 +1,8 @@
+// search for
+// XXX buggy...
+
+
+
 /*
  * in function call stuff M-S is really A_IPMARK - see start of QMRCL in ucadr
  */
@@ -27,83 +32,7 @@ void D_QMRCL (void (*leave)(void));
 void XMEMQ1 (Q needle, Q haystack);
 void QIGRP (void);
 
-struct qfields_common {
-	unsigned int pointer : 24;
-	unsigned int type : 5;
-	unsigned int flag : 1;
-	unsigned int cdr_code : 2;
-};
-
-struct fef_header {
-	unsigned int pc : 020;
-	unsigned int sv_bind : 1;
-	unsigned int fast_arg : 1;
-	unsigned int no_adl : 1;
-	unsigned int stype : 5;
-};
-
-struct numeric_arg_desc {
-	unsigned int max_args : 6; /* 0006 */
-	unsigned int min_args : 6; /* 0606 */
-	unsigned int unused : 5; /* 1405 */
-	unsigned int fef_bind_hair : 1; /* 2101 */
-	unsigned int interpreted : 1; /* 2201 */
-	unsigned int fef_quote_hair : 1; /* 2301 */
-	unsigned int evaled_rest : 1; /* 2401 */
-	unsigned int quoted_rest : 1; /* 2501 */
-};
-
-/* at %FEFHI-MISC */
-struct fefhi_misc {
-	unsigned int ms_local_block_length : 7; /* 0007 */
-	unsigned int ms_arg_desc_org : 010; /* 0710 */
-	unsigned int ms_bind_desc_length : 010; /* 1710 */
-	unsigned int ms_debug_info_present : 1; /* 2701 */
-};
-
-struct arg_desc {
-	unsigned int fef_init_option : 4; /* 0004 */
-	unsigned int fef_arg_syntax : 3; /* 0403 */
-	unsigned int fef_quote_status : 2; /* 0702 */
-	unsigned int fef_des_dt : 4; /* 1104 */
-	unsigned int fef_functional : 1; /* 1501 */
-	unsigned int fef_special_bit : 1; /* 1601 */
-	unsigned int fef_special_bit2 : 1; /* 1701 */
-	unsigned int fef_name_present : 1; /* 2001 */
-};
-
-/*
- * M-INST-DEST      macro_inst.dest    or   macro_inst_reg.dest
- * M-INST-OP        macro_inst.op      or   macro_inst_reg.op
- * M-INST-ADR       macro_inst.offset
- * M-INST-REGISTER                          macro_inst_reg.reg
- * M-INST-DELTA                             macro_inst_reg.reg_offset
- */
-struct macro_inst {
-	unsigned int offset : 9;
-	unsigned int op : 4;
-	unsigned int dest : 3;
-};
-
-struct macro_inst_reg {
-	unsigned int reg_offset : 6;
-	unsigned int reg : 3;
-	unsigned int op : 4;
-	unsigned int dest : 3;
-};
-
-typedef union {
-	Q all;
-	struct qfields_common q;
-	struct fef_header fef_header;
-	struct numeric_arg_desc numarg;
-	struct fefhi_misc fef_misc;
-	struct arg_desc arg_desc;
-	struct macro_inst macro_inst;
-	struct macro_inst_reg macro_inst_reg;
-} qfields;
-
-qfields current_macro_inst;
+Q macro_inst;
 
 void QMRCL (void (*leavefunc)(void));
 void QCAR (void);
@@ -180,6 +109,8 @@ ILLOP (char *str)
 	printf ("Current function: ");
 	print_q_verbose (LC_fef);
 	printf ("\n");
+
+	exit (0);
 
 	cc ();
 }
@@ -505,14 +436,29 @@ Q arr_idx; /* M-Q element number */
 #define put_field(val,len,pos) (((val) & ((1 << (len)) - 1)) << (pos))
 
 Q
-dpb (Q val, Q len, Q pos, Q dest)
+ldb (Q ppss, Q val)
 {
-	Q mask_lo, mask;
+	Q pp, ss;
 
-	mask_lo = (1 << len) - 1;
-	mask = mask_lo << pos;
+	if (ppss > 07777)
+		ILLOP ("bad ldb");
+	pp = BIT_POS (ppss);
+	ss = BIT_SIZE (ppss);
+	return (((val) >> pp) & ((1 << ss) - 1));
+}
 
-	return ((dest & ~mask) | ((val << pos) & mask));
+Q
+dpb (Q val, Q ppss, Q into)
+{
+	Q pp, ss, mask;
+
+	if (ppss > 07777)
+		ILLOP ("bad dpb");
+	pp = BIT_POS (ppss);
+	ss = BIT_SIZE (ppss);
+	
+	mask = ((1 << ss) - 1) << pp;
+	return ((into & ~mask) | ((val << pp) & mask));
 }
 
 void
@@ -522,26 +468,21 @@ gahd1 (void)
 	vma = arr_base;
 	read_transport_header ();
 	arr_base = vma; /* may have forwarded */
-	if ((md & Q_DATA_TYPE) != DTP_ARRAY_HEADER)
+	if (q_data_type (md) != dtp_array_header)
 		ILLOP ("not array header");
 	arr_hdr = md;
 
-	arr_ndim = get_field (arr_hdr,
-			      ARRAY_NUMBER_OF_DIMENSIONS_len,
-			      ARRAY_NUMBER_OF_DIMENSIONS_pos);
+	arr_ndim = ldb (ARRAY_NUMBER_OF_DIMENSIONS, arr_hdr);
 
 	if (dflags & DBG_ARR)
 		printf ("ndim = %d\n", arr_ndim);
 
 	arr_data = arr_base + arr_ndim;
 
-	if ((arr_hdr & ARRAY_LONG_LENGTH_FLAG) == 0) {
+	if (ldb (ARRAY_LONG_LENGTH_FLAG, arr_hdr) == 0) {
 		if (dflags & DBG_ARR)
 			printf ("short\n");
-		arr_nelts = get_field (arr_hdr,
-				       ARRAY_INDEX_LENGTH_IF_SHORT_len,
-				       ARRAY_INDEX_LENGTH_IF_SHORT_pos);
-				 
+		arr_nelts = ldb (ARRAY_INDEX_LENGTH_IF_SHORT, arr_hdr);
 	} else {
 		arr_data++; /* skip size word */
 		arr_nelts = vmread (arr_base + 1); /* no transport, since just touched header */
@@ -566,7 +507,7 @@ sg_load_static_state (void)
 {
 	Q base;
 
-	if ((A_QCSTKG & Q_DATA_TYPE) != DTP_STACK_GROUP)
+	if (q_data_type (A_QCSTKG) != dtp_stack_group)
 		ILLOP ("not stack group");
 
 	base = vmread_transport (A_QCSTKG - (2 + SG_REGULAR_PDL));
@@ -736,7 +677,7 @@ beg0000 (void)
 	pdl_push (FIX_ZERO);
 	pdl_push (A_INITIAL_FEF);
 
-	if ((A_INITIAL_FEF & Q_DATA_TYPE) != DTP_FEF_POINTER)
+	if (q_data_type (A_INITIAL_FEF) != dtp_fef_pointer)
 		ILLOP ("bad initial fef");
 
 	A_AP = pdl_top;
@@ -748,7 +689,7 @@ beg0000 (void)
 
 	vma = LC_fef;
 	read_transport_header ();
-	LC_pc = get_field (md, FEFH_PC_len, FEFH_PC_pos);
+	LC_pc = ldb (FEFH_PC, md);
 }
 
 enum reg {
@@ -791,7 +732,7 @@ QAFE (void)
 	Q fef;
 	int offset;
 
-	offset = current_macro_inst.macro_inst.offset;
+	offset = ldb (M_INST_ADR, macro_inst);
 	fef = pdl_ref (A_AP); /* 0(AP) -> FEF (LC_fef may be safe here) */
 
 	A_T = q_typed_pointer (vmread_transport (fef + offset));
@@ -808,7 +749,7 @@ QAQT (void)
 {
 	int offset;
 
-	offset = current_macro_inst.macro_inst_reg.reg_offset;
+	offset = ldb (M_INST_DELTA, macro_inst);
 	md = vmread_transport (A_V_CONSTANTS_AREA + offset);
 	A_T = q_typed_pointer (md);
 
@@ -821,7 +762,8 @@ QADARG (void)
 {
 	// REF ARGUMENT BLOCK.  CANNOT BE INVISIBLE POINTER.
 	// QADARG
-	A_T = q_typed_pointer (pdl_ref (A_AP + current_macro_inst.macro_inst_reg.reg_offset
+	A_T = q_typed_pointer (pdl_ref (A_AP
+					+ ldb (M_INST_DELTA, macro_inst)
 					+ LP_INITIAL_LOCAL_BLOCK_OFFSET));
 }
 
@@ -832,7 +774,8 @@ QADARG (void)
 void
 QADLOC (void)
 {
-	A_T = q_typed_pointer (pdl_ref (A_LOCALP + current_macro_inst.macro_inst_reg.reg_offset));
+	A_T = q_typed_pointer (pdl_ref (A_LOCALP
+					+ ldb (M_INST_DELTA, macro_inst)));
 }
 
 // REF PDL.  CANNOT BE INVISIBLE POINTER.
@@ -841,7 +784,7 @@ void
 QADPDL (void) 
 {
 	A_T = pdl_pop ();
-	if (current_macro_inst.macro_inst_reg.reg_offset != 077)
+	if (ldb (M_INST_DELTA, macro_inst) != 077)
 		trap ("QADPDL bad offset");
 }
 
@@ -851,7 +794,7 @@ QADPDL (void)
 void
 fetch_arg (void)
 {
-	switch (current_macro_inst.macro_inst_reg.reg) {
+	switch (ldb (M_INST_REGISTER, macro_inst)) {
 	case reg_fef: QAFE (); break;
 	case reg_fef100: QAFE (); break;
 	case reg_fef200: QAFE (); break;
@@ -872,17 +815,9 @@ open_call_block (int dest)
 	new_ipmark = pdl_top + LP_CALL_BLOCK_LENGTH;	
 
 	lpcls = FIX_ZERO;
-	lpcls |= put_field (new_ipmark - A_IPMARK,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_len,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_pos);
-			     
-	lpcls |= put_field (new_ipmark - A_AP,
-			    LP_CLS_DELTA_TO_ACTIVE_BLOCK_len,
-			    LP_CLS_DELTA_TO_ACTIVE_BLOCK_pos);
-
-	lpcls |= put_field (dest,
-			    LP_CLS_DESTINATION_len,
-			    LP_CLS_DESTINATION_pos);
+	lpcls = dpb (new_ipmark - A_IPMARK, LP_CLS_DELTA_TO_OPEN_BLOCK, lpcls);
+	lpcls = dpb (new_ipmark - A_AP, LP_CLS_DELTA_TO_ACTIVE_BLOCK, lpcls);
+	lpcls = dpb (dest, LP_CLS_DESTINATION, lpcls);
 
 	pdl_push (lpcls);
 
@@ -900,7 +835,7 @@ void
 QICALL(void) 
 {
 	fetch_arg ();
-	open_call_block (current_macro_inst.macro_inst_reg.dest);
+	open_call_block (ldb (M_INST_DEST, macro_inst));
 }
 
 // CALL WITH NO ARGS
@@ -909,7 +844,7 @@ QICAL0 (void)
 {
 	// QICAL0
 	fetch_arg (); // FEF -> A_T
-	open_call_block (current_macro_inst.macro_inst_reg.dest);
+	open_call_block (ldb (M_INST_DEST, macro_inst));
 	QMRCL (QLLV);
 }
 
@@ -947,11 +882,11 @@ BBLKP (int just_one_flag)
 	cell = FIX_ZERO; /* don't leave EVCP in reg */
 
 	if (just_one_flag == 0)
-		A_FLAGS &= ~M_FLAGS_QBBFL;
+		A_FLAGS = dpb (0, M_FLAGS_QBBFL, A_FLAGS);
 	
-	if ((A_FLAGS & M_FLAGS_DEFERRED_SEQUENCE_BREAK) != 0
+	if (ldb (M_FLAGS_DEFERRED_SEQUENCE_BREAK, A_FLAGS) != 0
 	    && q_typed_pointer (A_INHIBIT_SCHEDULING_FLAG) == SYM_NIL) {
-		A_FLAGS &= ~M_FLAGS_DEFERRED_SEQUENCE_BREAK;
+		A_FLAGS = dpb (0, M_FLAGS_DEFERRED_SEQUENCE_BREAK, A_FLAGS);
 		ILLOP ("sequence break unimp");
 	}
 }
@@ -971,18 +906,9 @@ P3ZERO (void)
 	// P3ZER1
 	A_ZR = pdl_top + LP_CALL_BLOCK_LENGTH - 1; // 1- because of push just done
 	
-	A_TEM1 = put_field (D_MICRO,
-			    LP_CLS_DESTINATION_len,
-			    LP_CLS_DESTINATION_pos);
-
-	A_TEM1 |= put_field (A_ZR - A_IPMARK,
-			     LP_CLS_DELTA_TO_OPEN_BLOCK_len,
-			     LP_CLS_DELTA_TO_OPEN_BLOCK_pos);
-			     
-
-	A_TEM1 |= put_field (A_ZR - A_AP,
-			     LP_CLS_DELTA_TO_ACTIVE_BLOCK_len,
-			     LP_CLS_DELTA_TO_ACTIVE_BLOCK_pos);
+	A_TEM1 = dpb (D_MICRO, LP_CLS_DESTINATION, 0);
+	A_TEM1 = dpb (A_ZR - A_IPMARK, LP_CLS_DELTA_TO_OPEN_BLOCK, A_TEM1);
+	A_TEM1 = dpb (A_ZR - A_AP, LP_CLS_DELTA_TO_ACTIVE_BLOCK, A_TEM1);
 
 	pdl_store (pdl_top, pdl_ref (pdl_top) | A_TEM1); // IOR with LPCLS Q already pushed
 	pdl_push (FIX_ZERO); // Push LPEXS Q
@@ -1073,7 +999,7 @@ XTHRW7:
 XTHRW4:
 	A_B = q_typed_pointer (pdl_ref (A_I + LP_CALL_STATE)); // PRESERVE FOR USE BELOW
 
-	if ((A_B & LP_CLS_ADI_PRESENT) == 0) // NO ADI, HAD BETTER BE DESTINATION RETURN
+	if (ldb (LP_CLS_ADI_PRESENT, A_B) == 0) // NO ADI, HAD BETTER BE DESTINATION RETURN
 		goto XTHRW9;
 
 	A_D = A_I - LP_CALL_BLOCK_LENGTH;
@@ -1082,13 +1008,11 @@ XTHRW3:
 	if (q_data_type (pdl_ref (A_D)) != dtp_fix)
 		trap ("DATA-TYPE-SCREWUP ADI");
 
-	A_A = get_field (pdl_ref (A_D), ADI_TYPE_len, ADI_TYPE_pos);
+	A_A = ldb (ADI_TYPE, pdl_ref (A_D));
 	if (A_A != ADI_RESTART_PC)
 		goto XTHRW8;
 
-	A_J = get_field (pdl_ref (A_D),
-			 ADI_RPC_MICRO_STACK_LEVEL_len,
-			 ADI_RPC_MICRO_STACK_LEVEL_pos);
+	A_J = ldb (ADI_RPC_MICRO_STACK_LEVEL, pdl_ref (A_D));
 			 
 	A_E = q_pointer (A_D - 1);
 
@@ -1101,7 +1025,7 @@ XTHRW3:
 	// Change frame's return PC to restart PC
 	A_TEM = pdl_ref (A_AP + LP_EXIT_STATE);
 	pdl_store (A_AP + LP_EXIT_STATE,
-		   dpb (A_E, LP_EXS_EXIT_PC_len, LP_EXS_EXIT_PC_pos, A_TEM));
+		   dpb (A_E, LP_EXS_EXIT_PC, A_TEM));
 
 XTHRW5:
 	ILLOP ("micro stack stuff");
@@ -1151,10 +1075,10 @@ XTHRW6A:
 
 	// STORE BACK QBBFL WHICH MAY HAVE BEEN CLEARED
 	val = pdl_ref (A_AP + LP_EXIT_STATE);
-	if (A_FLAGS & M_FLAGS_QBBFL)
-		val |= LP_EXS_PC_STATUS;
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS))
+		val = dpb (1, LP_EXS_PC_STATUS, val);
 	else
-		val &= ~LP_EXS_PC_STATUS;
+		val = dpb (0, LP_EXS_PC_STATUS, val);
 	pdl_store (A_AP + LP_EXIT_STATE, val);
 
 XTHRW6B:
@@ -1212,7 +1136,7 @@ XTHRW9:
 	// CAN HAPPEN MAINLY THRU INTERPRETED CALLS TO *CATCH.
 
 	idx = A_I + LP_CALL_STATE;
-	A_C = get_field (pdl_ref (idx), LP_CLS_DESTINATION_len, LP_CLS_DESTINATION_pos);
+	A_C = ldb (LP_CLS_DESTINATION, pdl_ref (idx));
 	if (A_C != D_RETURN)
 		ILLOP ("XTHRW9");
 
@@ -1220,9 +1144,7 @@ XTHRW9:
 	// BIND PDL HACKERY NOT ATTEMPTED.
 	A_D = -1;
 
-	A_S = get_field (pdl_ref (idx),
-			 LP_CLS_DELTA_TO_ACTIVE_BLOCK_len,
-			 LP_CLS_DELTA_TO_ACTIVE_BLOCK_pos);
+	A_S = ldb (LP_CLS_DELTA_TO_ACTIVE_BLOCK, pdl_ref (idx));
 	A_I -= A_S;
 
 	A_J = 0; // Flush whole micro-stack
@@ -1230,9 +1152,7 @@ XTHRW9:
 
 XTHRW2:
 	// Skip this open frame
-	A_IPMARK = A_I - get_field (pdl_ref (A_I + LP_CALL_STATE),
-				    LP_CLS_DELTA_TO_OPEN_BLOCK_len,
-				    LP_CLS_DELTA_TO_OPEN_BLOCK_pos);
+	A_IPMARK = A_I - ldb (LP_CLS_DELTA_TO_OPEN_BLOCK, pdl_ref (A_I + LP_CALL_STATE));
 	A_IPMARK = q_pointer (A_IPMARK); // ASSURE NO GARBAGE IN A-IPMARK
 	goto XTHRW7;
 
@@ -1261,19 +1181,15 @@ XTHRW1:
 		goto XUWR1; // REACHED MAGIC COUNT, RESUME BY RETURNING
 
 XTHRW1B:
-	if (A_FLAGS & M_FLAGS_QBBFL)
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS))
 		BBLKP (0); // POP BINDING-BLOCK IF FRAME HAS ONE
 
 	idx = A_AP + LP_CALL_STATE;
-	A_TEM1 = get_field (pdl_ref (idx),
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_len,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_pos);
+	A_TEM1 = ldb (LP_CLS_DELTA_TO_OPEN_BLOCK, pdl_ref (idx));
 	A_IPMARK = A_AP - A_TEM1; // COMPUTE PREV A-IPMARK
 
-	A_TEM1 = get_field (pdl_ref (idx),
-			    LP_CLS_DELTA_TO_ACTIVE_BLOCK_len,
-			    LP_CLS_DELTA_TO_ACTIVE_BLOCK_pos);
-
+	A_TEM1 = ldb  (LP_CLS_DELTA_TO_ACTIVE_BLOCK, pdl_ref (idx));
+	
 	// FLUSH PDL OFF THE BOTTOM OF THE STACK, GO CALL THE ACTION,
 	// HAVING THROWN ALL THE WAY
 
@@ -1281,7 +1197,7 @@ XTHRW1B:
 	if (A_TEM1 == 0)
 		goto XUWR2;
 
-	if (pdl_ref (idx) & LP_CLS_ADI_PRESENT) {
+	if (ldb (LP_CLS_ADI_PRESENT, pdl_ref (idx))) {
 		// FLUSH ADDTL INFO
 		// QRAD1R
 		// FLUSH ADI FROM PDL
@@ -1298,12 +1214,12 @@ XTHRW1B:
 	A_AP -= A_TEM1; // RESTORE M-AP
 
 	idx = A_AP + LP_EXIT_STATE;
-	if (pdl_ref (idx) & LP_EXS_PC_STATUS)
-		A_FLAGS |= M_FLAGS_QBBFL;
+	if (ldb (LP_EXS_PC_STATUS, pdl_ref (idx)))
+		A_FLAGS = dpb (1, M_FLAGS_QBBFL, A_FLAGS);
 	else
-		A_FLAGS &= ~M_FLAGS_QBBFL;
+		A_FLAGS = dpb (0, M_FLAGS_QBBFL, A_FLAGS);
 
-	if (pdl_ref (idx) & LP_EXS_MICRO_STACK_SAVED)
+	if (ldb (LP_EXS_MICRO_STACK_SAVED, pdl_ref (idx)))
 		QMMPOP (); // RESTORE USTACK FROM BINDING STACK
 	goto XTHRW7;
 
@@ -1356,7 +1272,7 @@ QMDDR:
 	// QMDDR0
 
 	// POP BINDING BLOCK (IF STORED ONE)
-	if (A_FLAGS & M_FLAGS_QBBFL)
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS))
 		BBLKP (0); 
 
 	// QMEX1
@@ -1374,7 +1290,7 @@ QMDDR:
 
 	pdl_top = A_AP - LP_CALL_BLOCK_LENGTH;
 	
-	if (A_C & LP_CLS_ADI_PRESENT) {
+	if (ldb (LP_CLS_ADI_PRESENT, A_C)) {
 		Q idx;
 
 		// STORE LAST VALUE IN ADI CALL, FLUSH ADI FROM PDL
@@ -1401,9 +1317,7 @@ QMDDR:
 		pdl_top = idx - 1;
 	}
 
-	A_TEM1 = get_field (A_C,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_len,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_pos);
+	A_TEM1 = ldb (LP_CLS_DELTA_TO_OPEN_BLOCK, A_C);
 
 	if (A_TEM1 == 0) {
 		QMXSG (); // RETURNING OUT TOP OF STACK-GROUP
@@ -1413,9 +1327,7 @@ QMDDR:
 	A_TEM = A_AP - A_TEM1; // COMPUTE PREV A-IPMARK
 	A_IPMARK = A_TEM; // RESTORE THAT
 
-	A_TEM1 = get_field (A_C, 
-			    LP_CLS_DELTA_TO_ACTIVE_BLOCK_len,
-			    LP_CLS_DELTA_TO_ACTIVE_BLOCK_pos);
+	A_TEM1 = ldb (LP_CLS_DELTA_TO_ACTIVE_BLOCK, A_C);
 	A_AP -= A_TEM1;
 
 	// Now restore the state of the frame being returned to.  We will restore
@@ -1426,22 +1338,20 @@ QMDDR:
 	
 	A_A = pdl_ref (A_AP); // FUNCTION RETURNING TO
 
-	A_LOCALP = A_AP + get_field (pdl_ref (A_AP + LP_ENTRY_STATE),
-				     LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_len,
-				     LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_pos);
+	A_LOCALP = A_AP + ldb (LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN,
+			       pdl_ref (A_AP + LP_ENTRY_STATE));
 
-	if (pdl_ref (A_AP + LP_EXIT_STATE) & LP_EXS_BINDING_BLOCK_PUSHED)
-		A_FLAGS |= 1;
+	if (ldb (LP_EXS_BINDING_BLOCK_PUSHED,
+		 pdl_ref (A_AP + LP_EXIT_STATE)))
+		A_FLAGS = dpb (1, M_FLAGS_QBBFL, A_FLAGS);
 	else
-		A_FLAGS &= ~1;
+		A_FLAGS = dpb (0, M_FLAGS_QBBFL, A_FLAGS);
 
-	if (pdl_ref (A_AP + LP_EXIT_STATE) & LP_EXS_MICRO_STACK_SAVED)
+	if (ldb (LP_EXS_MICRO_STACK_SAVED, pdl_ref (A_AP + LP_EXIT_STATE)))
 		QMMPOP ();
 
 	LC_fef = A_A;
-	LC_pc = get_field (pdl_ref (A_AP + LP_EXIT_STATE),
-			   LP_EXS_EXIT_PC_len,
-			   LP_EXS_EXIT_PC_pos);
+	LC_pc = ldb (LP_EXS_EXIT_PC, pdl_ref (A_AP + LP_EXIT_STATE));
 
 	if (q_data_type (LC_fef) == dtp_fef_pointer) {
 		printf ("#%d: Return to function: ", macro_count);
@@ -1458,7 +1368,7 @@ QMDDR:
 	// pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
 
 	// QMDTBD (dest could be d micro)
-	switch (get_field (A_C, LP_CLS_DESTINATION_len, LP_CLS_DESTINATION_pos)) {
+	switch (ldb (LP_CLS_DESTINATION, A_C)) {
 	case D_IGNORE:
 		break;
 	case D_PDL:
@@ -1635,11 +1545,14 @@ DSP_ARRAY_SETUP (void)
 		printf ("\n");
 	}
 
-	if (q_data_type (arr_data) != DTP_ARRAY_POINTER)
+	if (q_data_type (arr_data) != dtp_array_pointer)
 		return;
 
 	/* else, indirect array */
 	/* goto QDACMP */
+
+	// XXX buggy...
+	return;
 	ILLOP ("unimp");
 }
 
@@ -1670,7 +1583,7 @@ QARYR (void)
 
 	// QARY-M1 QARYR1
 
-	if (arr_hdr & ARRAY_DISPLACED_BIT)
+	if (ldb (ARRAY_DISPLACED_BIT, arr_hdr))
 		DSP_ARRAY_SETUP ();
 
 	if (arr_idx >= arr_nelts)
@@ -1682,9 +1595,7 @@ QARYR (void)
 	// PNTR TO HEADER OF LAST ARRAY REF ED
 	A_QLARYH = q_typed_pointer (arr_base); 
 
-	ARRAY_TYPE_REF_DISPATCH (get_field (arr_hdr,
-					    ARRAY_TYPE_FIELD_len,
-					    ARRAY_TYPE_FIELD_pos));
+	ARRAY_TYPE_REF_DISPATCH (ldb (ARRAY_TYPE_FIELD, arr_hdr));
 	
 	// QARYR5
 
@@ -1692,12 +1603,10 @@ QARYR (void)
 	call_state = pdl_ref (A_IPMARK + LP_CALL_STATE); 
 	pdl_top = A_IPMARK - LP_CALL_BLOCK_LENGTH;
 
-	delta = get_field (call_state,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_len,
-			    LP_CLS_DELTA_TO_OPEN_BLOCK_pos);
+	delta = ldb (LP_CLS_DELTA_TO_OPEN_BLOCK, call_state);
 	A_IPMARK -= delta;
 
-	if (call_state & LP_CLS_ADI_PRESENT) {
+	if (ldb (LP_CLS_ADI_PRESENT, call_state)) {
 		// multi value call, store last value in right place, etc
 		QRAD1 ();
 	}
@@ -1705,9 +1614,7 @@ QARYR (void)
 	// Duplicates QIMOVE-EXIT
 
 	// QMDTBD (note that D_MICRO needs to be added when doing return)
-	dest = get_field (call_state,
-			  LP_CLS_DESTINATION_len,
-			  LP_CLS_DESTINATION_pos);
+	dest = ldb (LP_CLS_DESTINATION, call_state);
 	switch (dest) {
 	case D_IGNORE:
 		break;
@@ -1752,9 +1659,9 @@ BIND_SELF (void)
 
 	A_TEM = q_typed_pointer (A_SELF);
 
-	if ((A_FLAGS & M_FLAGS_QBBFL) == 0) {
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS) == 0) {
 		// START NEW BINDING BLOCK
-		A_FLAGS |= M_FLAGS_QBBFL;
+		A_FLAGS = dpb (1, M_FLAGS_QBBFL, A_FLAGS);
 		A_TEM |= Q_FLAG_BIT; 
 	}
 
@@ -1989,11 +1896,7 @@ FINISH_ENTERED_FRAME (void)
 	Q entry_state;
 
 	A_AP = A_IPMARK;
-	entry_state =
-		FIX_ZERO
-		| put_field (A_R,
-			     LP_ENS_NUM_ARGS_SUPPLIED_len,
-			     LP_ENS_NUM_ARGS_SUPPLIED_pos);
+	entry_state = dpb (A_R, LP_ENS_NUM_ARGS_SUPPLIED, FIX_ZERO);
 	pdl_store (A_AP + LP_ENTRY_STATE, entry_state);
 }
 
@@ -2033,17 +1936,15 @@ SGLV (void)
 	A_LAST_STACK_GROUP = A_QCSTKG;
 
 	A_LAST_STACK_GROUP &= ~Q_FLAG_BIT;
-	if (A_FLAGS & M_FLAGS_METER_STACK_GROUP_ENABLE)
+	if (ldb (M_FLAGS_METER_STACK_GROUP_ENABLE, A_FLAGS))
 		A_LAST_STACK_GROUP |= Q_FLAG_BIT;
 
-	A_FLAGS |= M_FLAGS_STACK_GROUP_SWITCH; // SHUT OFF TRAPS, ETC.
+	A_FLAGS = dpb (1, M_FLAGS_STACK_GROUP_SWITCH, A_FLAGS); // SHUT OFF TRAPS, ETC.
 
 	if (q_data_type (A_QCSTKG) != dtp_stack_group)
 		ILLOP ("SGLV not stack group");
 
-	A_SG_STATE = dpb (A_TEM,
-			  SG_ST_CURRENT_STATE_len, SG_ST_CURRENT_STATE_pos,
-			  A_SG_STATE);
+	A_SG_STATE = dpb (A_TEM, SG_ST_CURRENT_STATE, A_SG_STATE);
 
 	A_4 = pdl_top; // SAVE ORIGINAL PDL LVL
 
@@ -2080,7 +1981,7 @@ SGLV (void)
 	
 	pdl_push (make_pointer (dtp_fix, A_FLAGS));
 
-	if (A_TEM & SG_ST_FOOTHOLD_EXECUTING_FLAG)
+	if (ldb (SG_ST_FOOTHOLD_EXECUTING_FLAG, A_TEM))
 		goto SGLV2;
 
 	A_J = A_QLBNDP;
@@ -2119,7 +2020,7 @@ SGLV3:
 	}
 
 SGLV4:
-	A_SG_STATE |= SG_ST_IN_SWAPPED_STATE;
+	A_SG_STATE = dpb (1, SG_ST_IN_SWAPPED_STATE, A_SG_STATE);
 
 SGLV2:
 	pdl_push (A_QLARYL);
@@ -2158,7 +2059,7 @@ SGLV2:
 		vma--;
 	}
 		
-	A_FLAGS &= ~M_FLAGS_STACK_GROUP_SWITCH;
+	A_FLAGS = dpb (0, M_FLAGS_STACK_GROUP_SWITCH, A_FLAGS);
 }
 
 void
@@ -2177,13 +2078,11 @@ SG_CALL (void)
 	// GET STATE OF SG GOING TO
 	// GET-SG-STATE
 	called_sg_state = vmread (A_2 - (2 + SG_STATE));
-	called_current_state = get_field (called_sg_state,
-					  SG_ST_CURRENT_STATE_len,
-					  SG_ST_CURRENT_STATE_pos);
+	called_current_state = ldb (SG_ST_CURRENT_STATE, called_sg_state);
 	TRAP_ON_BAD_SG_STATE (called_current_state);
 
-	if ((called_sg_state & SG_ST_SAFE) != 0
-	    && (A_SG_STATE & SG_ST_SAFE) != 0
+	if (ldb (SG_ST_SAFE, called_sg_state) != 0
+	    && ldb (SG_ST_SAFE, A_SG_STATE) != 0
 	    && called_current_state != SG_STATE_AWAITING_CALL
 	    && called_current_state != SG_STATE_AWAITING_INITIAL_CALL) {
 		trap ("sg state");
@@ -2204,9 +2103,9 @@ SG_CALL (void)
 	// SG-CALL-2
 	// Leave old SG in awaiting-return, and don't swap if both of these bits are off.
 	A_2 = SG_STATE_AWAITING_RETURN;
-	if ((A_SG_STATE & SG_ST_SWAP_SV_ON_CALL_OUT) == 0
-	    && (A_B & SG_ST_SWAP_SV_OF_SG_THAT_CALLS_ME) == 0) {
-		A_2 |= SG_ST_FOOTHOLD_EXECUTING_FLAG; // Set 100 bit; don't swap L-B-P
+	if ((ldb (SG_ST_SWAP_SV_ON_CALL_OUT, A_SG_STATE)) == 0
+	    && (ldb (SG_ST_SWAP_SV_OF_SG_THAT_CALLS_ME, A_B)) == 0) {
+		A_2 = dpb (1, SG_ST_FOOTHOLD_EXECUTING_FLAG, A_2); // Set 100 bit; don't swap L-B-P
 	}
 
 	// SG-CALL-3
@@ -2283,7 +2182,7 @@ SB_REINSTATE (void)
 	if (q_typed_pointer (A_INHIBIT_SCHEDULING_FLAG) != A_V_NIL)
 		return;
 
-	A_FLAGS &= ~M_FLAGS_DEFERRED_SEQUENCE_BREAK;
+	A_FLAGS = dpb (0, M_FLAGS_DEFERRED_SEQUENCE_BREAK, A_FLAGS);
 	ILLOP ("do SB");
 }
 
@@ -2295,7 +2194,7 @@ SGENT (void)
 {
 	Q i;
 
-	A_FLAGS |= M_FLAGS_STACK_GROUP_SWITCH;
+	A_FLAGS = dpb (1, M_FLAGS_STACK_GROUP_SWITCH, A_FLAGS);
 	sg_load_static_state ();
 
 	// NO TRANSPORT SINCE IT'S A FIXNUM
@@ -2315,7 +2214,7 @@ SGENT (void)
 		restore_ptr++;
 	}
 
-	A_SG_STATE = pdl_pop ();
+	A_SG_STATE = make_pointer (dtp_fix, pdl_pop ());
 	A_SG_PREVIOUS_STACK_GROUP = pdl_pop ();
 	A_SG_CALLING_ARGS_POINTER = pdl_pop ();
 	A_SG_CALLING_ARGS_NUMBER = pdl_pop ();
@@ -2339,7 +2238,7 @@ SGENT (void)
 	// XXX restore SG-ST-INST-DISP SG_ST_INST_DISP 
 
 	// RESTORE THE REST OF THE SG'S MICRO-STACK
-	if (pdl_ref (A_AP + LP_EXIT_STATE) & LP_EXS_MICRO_STACK_SAVED)
+	if (ldb (LP_EXS_MICRO_STACK_SAVED, pdl_ref (A_AP + LP_EXIT_STATE)))
 		QMMPOP ();
 
 	A_TRAP_MICRO_PC = pdl_pop ();
@@ -2348,7 +2247,7 @@ SGENT (void)
 
 	A_FLAGS = pdl_pop ();
 
-	if ((A_SG_STATE & SG_ST_IN_SWAPPED_STATE) != 0) {
+	if (ldb (SG_ST_IN_SWAPPED_STATE, A_SG_STATE) != 0) {
 		A_A = A_QLBNDO; // POINTS TO FIRST WD OF FIRST BLOCK.
 		
 	SGENT3:
@@ -2392,7 +2291,7 @@ SGENT (void)
 		}
 		
 	SGENT4:
-		A_SG_STATE &= ~SG_ST_IN_SWAPPED_STATE;
+		A_SG_STATE = dpb (0, SG_ST_IN_SWAPPED_STATE, A_SG_STATE);
 	}
 
 	// SGENT2
@@ -2411,7 +2310,7 @@ SGENT (void)
 	A_A = pdl_pop ();
 	A_ZR = pdl_pop ();
 
-	if (A_FLAGS & M_FLAGS_METER_STACK_GROUP_ENABLE) {
+	if (ldb (M_FLAGS_METER_STACK_GROUP_ENABLE, A_FLAGS)) {
 		ILLOP ("METER-SG-ENTER");
 	}
 
@@ -2433,19 +2332,19 @@ SGENT (void)
 	A_4 = A_QCSTKG;
 	vma = A_4 - (2 + SG_STATE);
 	A_4 = SG_STATE_ACTIVE;
-	A_4 = dpb (A_4, SG_ST_CURRENT_STATE_len, SG_ST_CURRENT_STATE_pos, A_SG_STATE);
+	A_4 = dpb (A_4, SG_ST_CURRENT_STATE, A_SG_STATE);
 	vmwrite (vma, A_4);
 
 	vmread (restored_vma); // RESTORE VMA AND MD
 
-	A_FLAGS &= ~M_FLAGS_STACK_GROUP_SWITCH;
+	A_FLAGS = dpb (0, M_FLAGS_STACK_GROUP_SWITCH, A_FLAGS);
 
-	if (A_FLAGS & M_FLAGS_DEFERRED_SEQUENCE_BREAK)
+	if (ldb (M_FLAGS_DEFERRED_SEQUENCE_BREAK, A_FLAGS))
 		SB_REINSTATE ();
 
 	// XXX knows that current state is right aligned
-	A_TEM = get_field (A_SG_STATE, SG_ST_CURRENT_STATE_len, SG_ST_CURRENT_STATE_pos);
-	A_SG_STATE = A_4;
+	A_TEM = ldb (SG_ST_CURRENT_STATE, A_SG_STATE);
+	A_SG_STATE = make_pointer (dtp_fix, A_4);
 }
 
 int new_pc;
@@ -2464,21 +2363,21 @@ FRMBN1 (void)
 	idx = A_AP;
 	A_T = A_A + FEFHI_SPECIAL_VALUE_CELL_PNTRS;
 
-	if ((md & FEFHI_SVM_ACTIVE) == 0) {
+	if (ldb (FEFHI_SVM_ACTIVE, md) == 0) {
 		// FOO FAST OPT SHOULD NOT BE ON UNLESS SVM IS. (IT
 		// ISNT WORTH IT TO HAVE ALL THE HAIRY MICROCODE TO
 		// SPEED THIS CASE UP A TAD.)
 		ILLOP ("FRMBN1"); 
 	}
 
-	A_C = get_field (md, FEFHI_SVM_BITS_len, FEFHI_SVM_BITS_pos);
+	A_C = ldb (FEFHI_SVM_BITS, md);
 
 	// FRMBN2
 	while (A_C != 0) {
 		idx++;
-		if (A_C & FEFHI_SVM_HIGH_BIT) {
+		if (ldb (FEFHI_SVM_HIGH_BIT, A_C)) {
 			QBSPCL (idx);
-			A_C &= ~FEFHI_SVM_HIGH_BIT;
+			A_C = dpb (0, FEFHI_SVM_HIGH_BIT, A_C);
 		}
 		A_C <<= 1;
 	}
@@ -2499,8 +2398,8 @@ FRMBN1 (void)
 void
 QLENTR (void)
 {
-	qfields hdr; /* A-D A_D */
-	qfields numarg;
+	Q hdr; /* A-D A_D */
+	Q numarg;
 	Q max_args;
 	unsigned int i;
 
@@ -2510,33 +2409,34 @@ QLENTR (void)
 	A_ERROR_SUBSTATUS = 0;
 	A_LCTYP = 0;		// CLEAR OUT LINEAR-CALL-TYPE 
 
-	hdr.all = vmread (A_A);
-	if (hdr.fef_header.stype != HEADER_TYPE_FEF)
+	hdr = vmread (A_A);
+	if (ldb (STRUCTURE_TYPE_FIELD, hdr) != HEADER_TYPE_FEF)
 		ILLOP ("not fef header type");
 
 	/* M-J */
-	new_pc = hdr.fef_header.pc; /* may change due to optional args */
+	new_pc = ldb (FEFH_PC, hdr); /* may change due to optional args */
 
-	if (pdl_ref (A_AP + LP_CALL_STATE) & LP_CLS_ADI_PRESENT) {
+	if (ldb (LP_CLS_ADI_PRESENT, pdl_ref (A_AP + LP_CALL_STATE))) {
 		QLEAI1 ();
 		return;
 	}
 
 	/* QLEAI2: */
 
-	if (hdr.fef_header.fast_arg == 0) {
+	if (ldb (FEFH_FAST_ARG, hdr) == 0) {
 		QRENT ();
 		return;
 	}
 
-	numarg.all = vmread (A_A + FEFHI_FAST_ARG_OPT);
-	if (numarg.q.type  != dtp_fix)
+	numarg = vmread (A_A + FEFHI_FAST_ARG_OPT);
+	if (q_data_type (numarg)  != dtp_fix)
 		trap ("DATA-TYPE-SCREWUP FEF");
 		
-	if (A_R < numarg.numarg.min_args)
-		A_ERROR_SUBSTATUS |= M_ESUBS_TOO_FEW_ARGS;
+	if (A_R < ldb (ARG_DESC_MIN_ARGS, numarg))
+		A_ERROR_SUBSTATUS = dpb (1, M_ESUBS_TOO_FEW_ARGS,
+					 A_ERROR_SUBSTATUS);
 
-	if (numarg.numarg.quoted_rest || numarg.numarg.evaled_rest) {
+	if (ldb (ARG_DESC_ANY_REST, numarg)) {
 		Q n;
 		Q local_block_origin;
 
@@ -2549,24 +2449,24 @@ QLENTR (void)
 		if (A_LCTYP != 0) 
 			ILLOP ("goto QLFRA1");
 
-		if (A_R <= numarg.numarg.max_args) {
+		if (A_R <= ldb (ARG_DESC_MAX_ARGS, numarg)) {
 			// Called with just spread arguments.
 			// If the rest arg will be NIL, push NILs for it and any 
 			// missing optionals.
 			
-			n = (numarg.numarg.max_args - A_R) + 1;
+			n = (ldb (ARG_DESC_MAX_ARGS, numarg) - A_R) + 1;
 			for (i = 0; i < n; i++)
 				pdl_push (A_V_NIL);
 			
 			local_block_origin = LP_INITIAL_LOCAL_BLOCK_OFFSET
-				+ numarg.numarg.max_args;
+				+ ldb (ARG_DESC_MAX_ARGS, numarg);
 		} else {
 			// Called with enough spread args to get into the rest arg
 			// QLFSA2
 
 			// First of rest
 			n = convert_pdl_buffer_address (A_AP
-							+ numarg.numarg.max_args
+							+ ldb (ARG_DESC_MAX_ARGS, numarg)
 							+ LP_INITIAL_LOCAL_BLOCK_OFFSET);
 			pdl_push (make_pointer (dtp_list, n)); // Push the rest-arg
 
@@ -2580,35 +2480,31 @@ QLENTR (void)
 		A_LOCALP = A_AP + local_block_origin;
 
 		n = FIX_ZERO;
-		n |= put_field (A_R,
-				LP_ENS_NUM_ARGS_SUPPLIED_len,
-				LP_ENS_NUM_ARGS_SUPPLIED_pos);
-		n |= put_field (local_block_origin,
-				LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_len,
-				LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_pos);
+		n = dpb (A_R, LP_ENS_NUM_ARGS_SUPPLIED, n);
+		n = dpb (local_block_origin, LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN, n);
 		pdl_store (A_AP + LP_ENTRY_STATE, n);
 		
-		qfields misc;
-		misc.all = vmread (A_A + FEFHI_MISC);
-		A_T = misc.fef_misc.ms_local_block_length;
+		A_T = ldb (FEFHI_MS_LOCAL_BLOCK_LENGTH,
+			   vmread (A_A + FEFHI_MISC));
 		A_T--; // First local (rest arg) already pushed
 		goto QFL1C;
 
 	}
 
-	max_args = numarg.numarg.max_args;
+	max_args = ldb (ARG_DESC_MAX_ARGS, numarg);
 	if (A_R > max_args)
-		A_ERROR_SUBSTATUS |= M_ESUBS_TOO_MANY_ARGS;
+		A_ERROR_SUBSTATUS = dpb (1, M_ESUBS_TOO_MANY_ARGS,
+					 A_ERROR_SUBSTATUS);
 
 	A_LOCALP = A_AP + LP_INITIAL_LOCAL_BLOCK_OFFSET + max_args;
 
 	A_C = FIX_ZERO;
-	A_C |= put_field (LP_INITIAL_LOCAL_BLOCK_OFFSET + max_args,
-			  LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_len,
-			  LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_pos);
-	A_C |= put_field (A_R,
-			  LP_ENS_NUM_ARGS_SUPPLIED_len,
-			  LP_ENS_NUM_ARGS_SUPPLIED_pos);
+	A_C = dpb (LP_INITIAL_LOCAL_BLOCK_OFFSET + max_args,
+		   LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN,
+		   A_C);
+	A_C = dpb (A_R,
+		   LP_ENS_NUM_ARGS_SUPPLIED,
+		   A_C);
 
 	/* QLEAI5 */
 
@@ -2620,9 +2516,7 @@ QLENTR (void)
 
 	// QFL1
 	// HAVE SET UP ARGS
-	qfields misc;
-	misc.all = vmread (A_A + FEFHI_MISC);
-	A_T = misc.fef_misc.ms_local_block_length;
+	A_T = ldb (FEFHI_MS_LOCAL_BLOCK_LENGTH, vmread (A_A + FEFHI_MISC));
 
 QFL1C:
 
@@ -2630,7 +2524,7 @@ QFL1C:
 	for (i = 0; i < A_T; i++)
 		pdl_push (SYM_NIL);
 
-	if (hdr.fef_header.sv_bind) {
+	if (ldb (FEFH_SV_BIND, hdr)) {
 		// MOVE S-V BINDINGS TO S-V-CELLS AND PUSH PREVIOUS
 		// BINDINGS ON BINDING PDL
 		FRMBN1 ();
@@ -2684,8 +2578,7 @@ void
 QRENT (void)
 {
 	int args_left;
-	qfields misc;
-	qfields arg_desc;
+	Q arg_desc;
 	int argidx;
 	Q arg;
 	Q tmp;
@@ -2698,11 +2591,9 @@ QRENT (void)
 
 	args_left = A_R; // # ARGS YET TO DO
 
-	misc.all = vmread (A_A + FEFHI_MISC);
-
-	arg_desc_ptr = A_A + misc.fef_misc.ms_arg_desc_org; // -> FIRST BIND DESC
-
-	bind_desc_to_go = misc.fef_misc.ms_bind_desc_length;
+	Q misc = vmread (A_A + FEFHI_MISC);
+	arg_desc_ptr = A_A + ldb (FEFHI_MS_ARG_DESC_ORG, misc); // -> FIRST BIND DESC
+	bind_desc_to_go = ldb (FEFHI_MS_BIND_DESC_LENGTH, misc);
 	A_LOCALP = -1; // SIGNAL LOCAL BLOCK NOT YET LOCATED
 
 	if (A_LCTYP != 0) {
@@ -2717,7 +2608,8 @@ QRENT (void)
 		if (bind_desc_to_go == 0) {
 			// OUT OF BIND DESC, TOO MANY ARGS
 			// QBTMA1
-			A_ERROR_SUBSTATUS |= M_ESUBS_TOO_MANY_ARGS;
+			A_ERROR_SUBSTATUS = dpb (1, M_ESUBS_TOO_MANY_ARGS,
+						 A_ERROR_SUBSTATUS);
 			argidx += args_left; // ADVANCE LCL PNTR PAST THE EXTRA ARGS
 			goto done;
 		}
@@ -2726,19 +2618,19 @@ QRENT (void)
 
 		arg = pdl_ref (argidx);
 
-		arg_desc.all = vmread (arg_desc_ptr); // ACCESS WORD OF BINDING OPTIONS
-		if (arg_desc.arg_desc.fef_name_present)
+		arg_desc = vmread (arg_desc_ptr); // ACCESS WORD OF BINDING OPTIONS
+		if (ldb (FEF_NAME_PRESENT, arg_desc))
 			arg_desc_ptr++;
 
 		// QREDT1
-		switch (arg_desc.arg_desc.fef_arg_syntax) {
+		switch (ldb (FEF_ARG_SYNTAX, arg_desc)) {
 		case FEF_ARG_OPT:
 			/* QBROP1 */
 			// OPTIONAL ARG IS PRESENT, 
 			// SPACE PAST INITIALIZATION INFO IF ANY
 			// ucadr dispatch table is only 3 bits?
 			/* dispatch QBOPNP */
-			switch (arg_desc.arg_desc.fef_init_option & 7) {
+			switch (ldb (FEF_INIT_OPTION, arg_desc) & 7) {
 			case FEF_INI_NONE:
 			case FEF_INI_NIL:
 			case FEF_INI_COMP_C:
@@ -2764,10 +2656,10 @@ QRENT (void)
 
 		case FEF_ARG_REQ:
 			// QBRQA
-			if (arg_desc.arg_desc.fef_special_bit)
+			if (ldb (FEF_SPECIAL_BIT, arg_desc))
 				QBSPCL (0); /* XXX pdl-buffer-idx */
 
-			switch (arg_desc.arg_desc.fef_des_dt) {
+			switch (ldb (FEF_DES_DT, arg_desc)) {
 			case FEF_DT_DONTCARE: /* no data type chekcing */
 				break;
 
@@ -2777,19 +2669,28 @@ QRENT (void)
 				case dtp_extended_number:
 					break;
 				default:
-					A_ERROR_SUBSTATUS |= M_ESUBS_BAD_DT;
+					A_ERROR_SUBSTATUS
+						= dpb (1,
+						       M_ESUBS_BAD_DT,
+						       A_ERROR_SUBSTATUS);
 					break;
 				}
 				break;
 
 			case FEF_DT_FIXNUM:
 				if (q_data_type (arg) != dtp_fix)
-					A_ERROR_SUBSTATUS |= M_ESUBS_BAD_DT;
+					A_ERROR_SUBSTATUS
+						= dpb (1,
+						       M_ESUBS_BAD_DT,
+						       A_ERROR_SUBSTATUS);
 				break;
 
 			case FEF_DT_SYM:
 				if(q_data_type (arg) != dtp_symbol)
-					A_ERROR_SUBSTATUS |= M_ESUBS_BAD_DT;
+					A_ERROR_SUBSTATUS 
+						= dpb (1,
+						       M_ESUBS_BAD_DT,
+						       A_ERROR_SUBSTATUS);
 				break;
 
 			case FEF_DT_ATOM:
@@ -2799,7 +2700,10 @@ QRENT (void)
 				case dtp_extended_number:
 					break;
 				default:
-					A_ERROR_SUBSTATUS |= M_ESUBS_BAD_DT;
+					A_ERROR_SUBSTATUS
+						= dpb (1,
+						       M_ESUBS_BAD_DT,
+						       A_ERROR_SUBSTATUS);
 					break;
 				}
 				break;
@@ -2807,12 +2711,18 @@ QRENT (void)
 			case FEF_DT_LIST:
 				if (q_typed_pointer (arg) != SYM_NIL
 				    && q_data_type (arg) != dtp_list)
-					A_ERROR_SUBSTATUS |= M_ESUBS_BAD_DT;
+					A_ERROR_SUBSTATUS
+						= dpb (1,
+						       M_ESUBS_BAD_DT,
+						       A_ERROR_SUBSTATUS);
 				break;
 
 			case FEF_DT_FRAME:
 				if (q_data_type (arg) != dtp_fef_pointer)
-					A_ERROR_SUBSTATUS |= M_ESUBS_BAD_DT;
+					A_ERROR_SUBSTATUS 
+						= dpb (1,
+						       M_ESUBS_BAD_DT,
+						       A_ERROR_SUBSTATUS);
 				break;
 			}
 			break;
@@ -2823,7 +2733,9 @@ QRENT (void)
 		case FEF_ARG_INTERNAL_AUX:
 			// TOO MANY ARGS
 			// QBTMA2
-			A_ERROR_SUBSTATUS |= M_ESUBS_TOO_MANY_ARGS;
+			A_ERROR_SUBSTATUS 
+				= dpb (1, M_ESUBS_TOO_MANY_ARGS,
+				       A_ERROR_SUBSTATUS);
 			argidx += args_left; // ADVANCING LCL PNTR PAST THE EXTRA ARGS
 			goto QBDT2; // FINISH BIND DESCS
 
@@ -2847,7 +2759,7 @@ QRENT (void)
 			tmp = convert_pdl_buffer_address (argidx);
 			pdl_push (make_pointer (dtp_list, tmp));
 
-			if (arg_desc.arg_desc.fef_special_bit)
+			if (ldb (FEF_SPECIAL_BIT, arg_desc))
 				QBLSPCL ();
 			arg_desc_ptr++; // ADVANCE TO NEXT BIND DESC
 			goto QBD0;
@@ -2870,11 +2782,11 @@ QBD0:
 			ILLOP ("QBD0");
 		bind_desc_to_go--;
 
-		arg_desc.all = vmread (arg_desc_ptr); // ACCESS WORD OF BINDING OPTIONS
-		if (arg_desc.arg_desc.fef_name_present)
+		arg_desc = vmread (arg_desc_ptr); // ACCESS WORD OF BINDING OPTIONS
+		if (ldb (FEF_NAME_PRESENT, arg_desc))
 			arg_desc_ptr++;
 
-		if (arg_desc.arg_desc.fef_arg_syntax != FEF_ARG_REST)
+		if (ldb (FEF_ARG_SYNTAX, arg_desc) != FEF_ARG_REST)
 			ILLOP ("not rest arg");
 		
 		if (A_LOCALP == -1)
@@ -2882,7 +2794,7 @@ QBD0:
 		
 		pdl_top = argidx; // SO DONT STORE LOCALS OVER ARG
 		
-		if (arg_desc.arg_desc.fef_special_bit)
+		if (ldb (FEF_SPECIAL_BIT, arg_desc))
 			QBLSPCL ();
 		
 		arg_desc_ptr++;
@@ -2892,17 +2804,18 @@ QBD0:
 	while (bind_desc_to_go > 0) {
 		bind_desc_to_go--;
 
-		arg_desc.all = vmread (arg_desc_ptr); // GET NEXT BINDING DESC Q
-		if (arg_desc.arg_desc.fef_name_present)
+		arg_desc = vmread (arg_desc_ptr); // GET NEXT BINDING DESC Q
+		if (ldb (FEF_NAME_PRESENT, arg_desc))
 			arg_desc_ptr++;
 	
 		/* dispatch QBDT2 */
 	QBDT2:
-		switch (arg_desc.arg_desc.fef_arg_syntax) { /* 3 bits */
+		switch (ldb (FEF_ARG_SYNTAX, arg_desc)) { /* 3 bits */
 		case FEF_ARG_REQ:
 			// GOT ARG DESCRIPTOR WHEN OUT OF ARGS
 			// QBTFA1
-			A_ERROR_SUBSTATUS |= M_ESUBS_TOO_FEW_ARGS;
+			A_ERROR_SUBSTATUS = dpb (1, M_ESUBS_TOO_FEW_ARGS,
+						 A_ERROR_SUBSTATUS);
 			pdl_push (SYM_NIL);
 			break;
 		
@@ -2920,7 +2833,7 @@ QBD0:
 
 		QBOPT4:
 			// dispatch QBOPTT
-			switch (arg_desc.arg_desc.fef_init_option & 7) {
+			switch (ldb (FEF_INIT_OPTION, arg_desc) & 7) {
 			case FEF_INI_OPT_SA:
 				// QBOPT5
 				// OPTIONAL ARGUMENT INIT VIA ALTERNATE STARTING ADDRESS AND NOT PRESENT
@@ -2938,7 +2851,7 @@ QBD0:
 				// NONE, LATER MAY BE REINITED BY
 				// COMPILED CODE
 			
-				if (arg_desc.arg_desc.fef_special_bit) {
+				if (ldb (FEF_SPECIAL_BIT, arg_desc)) {
 					// SPECIAL, GET POINTER TO VALUE CELL
 					
 					// FETCH EXTERNAL VALUE CELL.
@@ -3045,7 +2958,7 @@ QBD0:
 		case FEF_ARG_FREE:
 			// QBDFRE
 			// takes no local slot; may take an S-V slot
-			if (arg_desc.arg_desc.fef_special_bit)
+			if (ldb (FEF_SPECIAL_BIT, arg_desc))
 				sv_slot++;
 			arg_desc_ptr++;
 			goto next;
@@ -3053,7 +2966,7 @@ QBD0:
 		case FEF_ARG_INTERNAL:	  
 		case FEF_ARG_INTERNAL_AUX:
 			// QBDINT
-			if (arg_desc.arg_desc.fef_special_bit) {
+			if (ldb (FEF_SPECIAL_BIT, arg_desc)) {
 				// IF SPECIAL, NO LOCAL SLOT, TAKES S-V SLOT
 				sv_slot++;
 				arg_desc_ptr++;
@@ -3070,7 +2983,7 @@ QBD0:
 
 		// QBD1A
 		argidx++;
-		if (arg_desc.arg_desc.fef_special_bit)
+		if (ldb (FEF_SPECIAL_BIT, arg_desc))
 			QBLSPCL ();
 		arg_desc_ptr++;
 		
@@ -3084,13 +2997,8 @@ done:
 	if (A_LOCALP == -1)
 		set_local_block (argidx); // SET UP LOCAL BLOCK
 
-	tmp = FIX_ZERO
-		| put_field (A_LOCALP - A_AP,
-			     LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_len,
-			     LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN_pos)
-		| put_field (A_R,
-			     LP_ENS_NUM_ARGS_SUPPLIED_len,
-			     LP_ENS_NUM_ARGS_SUPPLIED_pos);
+	tmp = dpb (A_LOCALP - A_AP, LP_ENS_MACRO_LOCAL_BLOCK_ORIGIN, FIX_ZERO);
+	tmp = dpb (A_R, LP_ENS_NUM_ARGS_SUPPLIED, tmp);
 	pdl_store (A_AP + LP_ENTRY_STATE, tmp);
 
 	// FINISH LINEARLY ENTERING
@@ -3113,14 +3021,19 @@ done:
 void
 QLLV (void)
 {
-	int pc_mask, pdl_off, exit_state;
-	pc_mask = ((1 << LP_EXS_EXIT_PC_len) - 1) << LP_EXS_EXIT_PC_pos;
+	int pdl_off, exit_state;
+
 	pdl_off = A_AP + LP_EXIT_STATE;
-	exit_state = pdl_ref (pdl_off) & ~(pc_mask | LP_EXS_BINDING_BLOCK_PUSHED);
-	exit_state |= (LC_pc << LP_EXS_EXIT_PC_pos);
-	if (A_FLAGS & M_FLAGS_QBBFL)
-		exit_state |= LP_EXS_BINDING_BLOCK_PUSHED;
-	A_FLAGS &= ~M_FLAGS_QBBFL;
+	exit_state = pdl_ref (pdl_off);
+	exit_state = dpb (LC_pc, LP_EXS_EXIT_PC, exit_state);
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS))
+		exit_state = dpb (1, LP_EXS_BINDING_BLOCK_PUSHED,
+				  exit_state);
+	else
+		exit_state = dpb (0, LP_EXS_BINDING_BLOCK_PUSHED,
+				  exit_state);
+
+	A_FLAGS = dpb (0, M_FLAGS_QBBFL, A_FLAGS);
 	pdl_store (pdl_off, exit_state);
 }
 
@@ -3130,7 +3043,7 @@ void
 QMRCL (void (*leave)(void))
 {
 
-	if (A_FLAGS & M_FLAGS_TRAP_ON_CALLS)
+	if (ldb (M_FLAGS_TRAP_ON_CALLS, A_FLAGS))
 		trap ("qmrcl");
 
 	A_R = pdl_top - A_IPMARK; // arg count 
@@ -3198,6 +3111,35 @@ retry:
 	}
 }
 
+void
+store_dest (void)
+{
+	// QMDTBD
+	switch (ldb (M_INST_DEST, macro_inst)) {
+	case D_IGNORE:
+		break;
+	case D_PDL:
+	case D_NEXT:
+		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
+		break;
+
+	case D_LAST:
+		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
+		QMRCL (QLLV);
+		break;
+
+	case D_RETURN:
+		QMDDR (0);
+		break;
+
+	case D_NEXT_LIST:
+		ILLOP ("D-NEXT-LIST");
+		break;
+
+	default:
+		ILLOP ("bad dest");
+	}
+}
 
 void
 QIMOVE(void)
@@ -3210,68 +3152,24 @@ QIMOVE(void)
 		printf ("\n");
 	}
 
-	// QMDTBD (note that D_MICRO needs to be added when doing return)
-	switch (current_macro_inst.macro_inst_reg.dest) {
-	case D_IGNORE:
-		break;
-	case D_PDL:
-	case D_NEXT:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
-		break;
-
-	case D_LAST:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
-		QMRCL (QLLV);
-		break;
-
-	case D_RETURN:
-		QMDDR (0);
-		break;
-
-	case D_NEXT_LIST:
-		ILLOP ("D-NEXT-LIST");
-		break;
-
-	default:
-		ILLOP ("bad dest");
-	}
+	store_dest ();
 }
-
-
 
 void
 QICAR(void)
 {
 	// QICAR
 	fetch_arg ();
-
 	QCAR ();
+	store_dest ();
+}
 
-	// QMDTBD (note that D_MICRO needs to be added when doing return)
-	switch (current_macro_inst.macro_inst_reg.dest) {
-	case D_IGNORE:
-		break;
-	case D_PDL:
-	case D_NEXT:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
-		break;
-
-	case D_LAST:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
-		QMRCL (QLLV);
-		break;
-
-	case D_RETURN:
-		QMDDR (0);
-		break;
-
-	case D_NEXT_LIST:
-		ILLOP ("D-NEXT-LIST");
-		break;
-
-	default:
-		ILLOP ("bad dest");
-	}
+void
+QICDR(void) 
+{
+	fetch_arg ();
+	QCDR ();
+	store_dest ();
 }
 
 void
@@ -3279,119 +3177,45 @@ QICAAR(void)
 {
 	// QICAR
 	fetch_arg ();
-
 	QCAR ();
 	QCAR ();
-
-	// QMDTBD (note that D_MICRO needs to be added when doing return)
-	switch (current_macro_inst.macro_inst_reg.dest) {
-	case D_IGNORE:
-		break;
-	case D_PDL:
-	case D_NEXT:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
-		break;
-
-	case D_LAST:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
-		QMRCL (QLLV);
-		break;
-
-	case D_RETURN:
-		QMDDR (0);
-		break;
-
-	case D_NEXT_LIST:
-		ILLOP ("D-NEXT-LIST");
-		break;
-
-	default:
-		ILLOP ("bad dest");
-	}
+	store_dest ();
 }
 
 void
 QICADR(void)
 {
 	fetch_arg ();
-
 	QCDR ();
 	QCAR ();
-
-	// QMDTBD (note that D_MICRO needs to be added when doing return)
-	switch (current_macro_inst.macro_inst_reg.dest) {
-	case D_IGNORE:
-		break;
-	case D_PDL:
-	case D_NEXT:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
-		break;
-
-	case D_LAST:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
-		QMRCL (QLLV);
-		break;
-
-	case D_RETURN:
-		QMDDR (0);
-		break;
-
-	case D_NEXT_LIST:
-		ILLOP ("D-NEXT-LIST");
-		break;
-
-	default:
-		ILLOP ("bad dest");
-	}
+	store_dest ();
 }
 
 void
-QICDR(void) 
+QICDAR(void) 
 {
 	fetch_arg ();
-
+	QCAR ();
 	QCDR ();
-
-	// QMDTBD (note that D_MICRO needs to be added when doing return)
-	switch (current_macro_inst.macro_inst_reg.dest) {
-	case D_IGNORE:
-		break;
-	case D_PDL:
-	case D_NEXT:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NEXT<<30));
-		break;
-
-	case D_LAST:
-		pdl_push ((A_T & Q_ALL_BUT_CDR_CODE) | (CDR_NIL<<30)); 
-		QMRCL (QLLV);
-		break;
-
-	case D_RETURN:
-		QMDDR (0);
-		break;
-
-	case D_NEXT_LIST:
-		ILLOP ("D-NEXT-LIST");
-		break;
-
-	default:
-		ILLOP ("bad dest");
-	}
+	store_dest ();
 }
 
+void
+QICDDR(void) 
+{
+	fetch_arg ();
+	QCDR ();
+	QCDR ();
+	store_dest ();
+}
 
-
-void QICDDR(void) {ILLOP("QICDDR unimp");}
-void QICDAR(void) {ILLOP("QICDAR unimp");}
 void qi_unimp(void) {ILLOP("qi_unimp");}
-
-
 
 int
 get_branch_delta (void)
 {
 	int delta;
-	delta = current_macro_inst.macro_inst.offset;
+	delta = ldb (M_INST_ADR, macro_inst);
 	if (delta & 0400) {
 		if (delta != 0777) {
 			/* sign extend */
@@ -3399,7 +3223,7 @@ get_branch_delta (void)
 		} else if (delta == 0777) {
 			/* long branch */
 			fetch_macro_inst ();
-			delta = current_macro_inst.all;
+			delta = macro_inst;
 			if (delta & 0100000)
 				/* sign extend */
 				delta |= (-1 << 16);
@@ -3421,7 +3245,7 @@ QIBRN(void)
 	 */
 	delta = get_branch_delta ();
 
-	switch (current_macro_inst.macro_inst.dest) {
+	switch (ldb (M_INST_DEST, macro_inst)) {
 	case 0: // QBRALW ... BR
 		LC_pc += delta;
 		break;
@@ -4312,7 +4136,7 @@ misc_xstore (void)
 	gahd1 ();
 	arr_idx = q_pointer (A_QLARYL);
 
-	if (arr_hdr & ARRAY_DISPLACED_BIT) {
+	if (ldb (ARRAY_DISPLACED_BIT, arr_hdr)) {
 		DSP_ARRAY_SETUP ();
 	}
 
@@ -4320,9 +4144,7 @@ misc_xstore (void)
 		trap ("SUBSCRIPT-OOB M-Q M-S"); // INDEX OUT OF BOUNDS
 
 	A_T = pdl_pop ();
-	ARRAY_TYPE_STORE_DISPATCH (get_field (arr_hdr,
-					      ARRAY_TYPE_FIELD_len,
-					      ARRAY_TYPE_FIELD_pos));
+	ARRAY_TYPE_STORE_DISPATCH (ldb (ARRAY_TYPE_FIELD, arr_hdr));
 }
 
 void
@@ -4589,7 +4411,7 @@ XFLAD1 (void)
 	check_array ();
 
 	gahd1 ();
-	if ((arr_hdr & ARRAY_LEADER_BIT) == 0)
+	if (ldb (ARRAY_LEADER_BIT, arr_hdr) == 0)
 		trap ("no leader");
 
 	// GET LENGTH OF ARRAY LEADER
@@ -4631,7 +4453,7 @@ misc_as_1 (void)
 		trap ("ARRAY-NUMBER-DIMENSIONS M-D 1 M-A");
 
 	// XAS1A
-	if (arr_hdr & ARRAY_DISPLACED_BIT)
+	if (ldb (ARRAY_DISPLACED_BIT, arr_hdr))
 		DSP_ARRAY_SETUP ();
 
 	if (arr_idx >= arr_nelts)
@@ -4639,9 +4461,7 @@ misc_as_1 (void)
 
 	
 	A_T = val;
-	ARRAY_TYPE_STORE_DISPATCH (get_field (arr_hdr,
-					      ARRAY_TYPE_FIELD_len,
-					      ARRAY_TYPE_FIELD_pos));
+	ARRAY_TYPE_STORE_DISPATCH (ldb (ARRAY_TYPE_FIELD, arr_hdr));
 }
 
 // (DEFMIC STORE-ARRAY-LEADER 431 (X ARRAY INDEX) T)
@@ -4670,9 +4490,7 @@ misc_stack_group_resume (void)
 	A_2 = A_A;
 
 	called_sg_state = vmread (A_2 - (2 + SG_STATE));
-	called_current_state = get_field (called_sg_state,
-					  SG_ST_CURRENT_STATE_len,
-					  SG_ST_CURRENT_STATE_pos);
+	called_current_state = ldb (SG_ST_CURRENT_STATE, called_sg_state);
 	TRAP_ON_BAD_SG_STATE (called_current_state);
 
 	A_TEM = SG_STATE_AWAITING_CALL;
@@ -4712,16 +4530,14 @@ misc_stringp (void)
 	}
 
 	hdr = vmread_transport_header (A_A);
-	ndim = get_field (hdr,
-			  ARRAY_NUMBER_OF_DIMENSIONS_len,
-			  ARRAY_NUMBER_OF_DIMENSIONS_pos);
+	ndim = ldb (ARRAY_NUMBER_OF_DIMENSIONS, hdr);
 	
 	if (ndim != 1) {
 		A_T = A_V_NIL;
 		return;
 	}
 
-	switch (get_field (hdr, ARRAY_TYPE_FIELD_len, ARRAY_TYPE_FIELD_pos)) {
+	switch (ldb (ARRAY_TYPE_FIELD, hdr)) {
 	case ART_STRING:
 	case ART_FAT_STRING:
 		A_T = A_V_TRUE;
@@ -4817,9 +4633,9 @@ misc_get (void)
 	}
 }
 
-// (DEFMIC NTH 417 (N LIST) T)
+// (DEFMIC NTHCDR 420 (N LIST) T)
 void
-misc_nth (void)
+misc_nthcdr (void)
 {
 	Q n, i;
 
@@ -4836,6 +4652,13 @@ misc_nth (void)
 			break;
 		QCDR ();
 	}
+}
+
+// (DEFMIC NTH 417 (N LIST) T)
+void
+misc_nth (void)
+{
+	misc_nthcdr ();
 	QCAR ();
 }
 
@@ -4946,7 +4769,7 @@ XAAIXL (void)
 	check_array ();
 	gahd1 ();
 
-	if ((arr_hdr & ARRAY_LEADER_BIT) != 0) {
+	if (ldb (ARRAY_LEADER_BIT, arr_hdr) != 0) {
 		ILLOP ("check this");
 		A_T = q_typed_pointer (vmread (arr_base - 2)); // Get fill pointer from leader
 		if (q_data_type (A_T) == dtp_fix) {
@@ -4955,7 +4778,7 @@ XAAIXL (void)
 		}
 	}
 
-	if ((arr_hdr & ARRAY_DISPLACED_BIT) != 0) {
+	if ((ldb (ARRAY_DISPLACED_BIT, arr_hdr)) != 0) {
 		ILLOP ("check this");
 		A_T = make_pointer (dtp_fix, vmread (arr_data + 1)); // DISPLACED, GET INDEX LENGTH
 		return;
@@ -4991,7 +4814,7 @@ XSTRING_EQUAL (void)
 	if (arr_ndim != 1)
 		trap ("ARRAY-NUMBER-DIMENSIONS M-D 1 M-A");
 	A_C = A_T - arr_idx; // First string's subrange length (typed)
-	if (arr_hdr & ARRAY_DISPLACED_BIT)
+	if (ldb (ARRAY_DISPLACED_BIT, arr_hdr))
 		DSP_ARRAY_SETUP ();
 
 	A_I = arr_idx; // Save parameters of second string
@@ -5005,7 +4828,7 @@ XSTRING_EQUAL (void)
 	if (arr_ndim != 1)
 		trap ("ARRAY-NUMBER-DIMENSIONS M-D 1 M-A");
 	A_T = A_T - arr_idx; // First string's subrange length (typed)
-	if (arr_hdr & ARRAY_DISPLACED_BIT)
+	if (ldb (ARRAY_DISPLACED_BIT, arr_hdr))
 		DSP_ARRAY_SETUP ();
 
 	if (A_J == A_V_NIL) {
@@ -5046,16 +4869,12 @@ XSTRING_EQUAL (void)
 	while (1) {
 		A_BDIV_V1 = arr_idx;
 		A_BDIV_V2 = arr_data;
-		ARRAY_TYPE_REF_DISPATCH (get_field (arr_hdr,
-						    ARRAY_TYPE_FIELD_len,
-						    ARRAY_TYPE_FIELD_pos));
+		ARRAY_TYPE_REF_DISPATCH (ldb (ARRAY_TYPE_FIELD, arr_hdr));
 		A_1 = A_T & CH_CHAR; // Character from first string
 
 		arr_idx = A_I;
 		arr_data = A_K;
-		ARRAY_TYPE_REF_DISPATCH (get_field (A_ZR,
-						    ARRAY_TYPE_FIELD_len,
-						    ARRAY_TYPE_FIELD_pos));
+		ARRAY_TYPE_REF_DISPATCH (ldb (ARRAY_TYPE_FIELD, A_ZR));
 		A_2 = A_T & CH_CHAR; // Character from second string
 
 		XCHAR_EQUAL_1_2 ();
@@ -5099,14 +4918,14 @@ XEQUAL_0 (void)
 		if (q_data_type (A_T) == dtp_array_pointer) {
 			// XEQUAL-ARRAY
 			vmread_transport_header (A_T);
-			A_1 = get_field (md, ARRAY_TYPE_FIELD_len, ARRAY_TYPE_FIELD_pos);
+			A_1 = ldb (ARRAY_TYPE_FIELD, md);
 			
 			if (A_1 != ART_STRING && A_1 != ART_FAT_STRING)
 				goto ret_false;
 
 			// XEQUAL-STRING
 			vmread_transport_header (A_B);
-			A_2 = get_field (md, ARRAY_TYPE_FIELD_len, ARRAY_TYPE_FIELD_pos);
+			A_2 = ldb (ARRAY_TYPE_FIELD, md);
 			if (A_2 != ART_STRING && A_2 != ART_FAT_STRING)
 				goto ret_false;
 
@@ -5210,6 +5029,42 @@ misc_assure_pdl_room (void)
 	}
 }
 
+void
+SBPL_ADI (void)
+{
+	A_1 = A_QLBNDP - A_QLBNDO; // STORE ADI-BIND-STACK-LEVEL ADI BLOCK
+	pdl_push (make_pointer (dtp_fix, A_1));
+	pdl_push (dpb (ADI_BIND_STACK_LEVEL, ADI_TYPE, FIX_ZERO)
+		  | Q_FLAG_BIT);
+}
+
+// (DEFMIC %CATCH-OPEN 456 () NIL T)
+void
+misc_catch_open (void)
+{
+	Q val, idx;
+
+	macro_inst = dpb (D_IGNORE, M_INST_DEST, macro_inst);
+	A_T = make_pointer (dtp_u_code_entry, CATCH_U_CODE_ENTRY);
+	A_S = q_typed_pointer (pdl_pop ());
+	SBPL_ADI (); // PUSH ADI-BIND-STACK-LEVEL BLOCK
+
+	pdl_push (A_S | Q_FLAG_BIT); // PUSH RESTART PC
+	A_R = 0;
+	//A_R = micro_stack_pointer; XXX
+
+	val = dpb (A_R, ADI_RPC_MICRO_STACK_LEVEL, FIX_ZERO);
+	val = dpb (ADI_RESTART_PC, ADI_TYPE, val);
+	val |= Q_FLAG_BIT;
+	pdl_push (val);
+
+	// XCTO1
+	open_call_block (ldb (M_INST_DEST, macro_inst));
+	idx = A_IPMARK + LP_CALL_STATE;
+	pdl_store (idx, dpb (1, LP_CLS_ADI_PRESENT, pdl_ref (idx)));
+}
+
+
 // (DEFMIC %OPEN-CALL-BLOCK 533 (FUNCTION ADI-PAIRS DESTINATION) NIL)
 void
 misc_open_call_block (void)
@@ -5242,7 +5097,7 @@ misc_open_call_block (void)
 	open_call_block (A_C);
 
 	idx = pdl_top + LP_CALL_STATE;
-	pdl_store (idx, pdl_ref (idx) | LP_CLS_ADI_PRESENT);
+	pdl_store (idx, dpb (1, LP_CLS_ADI_PRESENT, pdl_ref (idx)));
 }
 
 // (DEFMIC %ACTIVATE-OPEN-CALL-BLOCK 535 () NIL)
@@ -5262,9 +5117,7 @@ get_fill_val (Q hdr)
 {
 	// FROM ARRAY EXHAUSTED
 	// COMPUTE FILLER VALUE IN M-T
-	switch (get_field (hdr,
-			   ARRAY_TYPE_FIELD_len,
-			   ARRAY_TYPE_FIELD_pos)) {
+	switch (ldb (ARRAY_TYPE_FIELD, hdr)) {
 	case ART_1B: case ART_2B: case ART_4B: case ART_8B: case ART_16B:
 	case ART_32B: case ART_STRING: case ART_HALF_FIX: case ART_FLOAT:
 	case ART_FPS_FLOAT: case ART_FAT_STRING: 
@@ -5286,7 +5139,7 @@ GADPTR (void)
 	check_array ();
 	gahd1 ();
 	arr_idx = 0;
-	if (arr_hdr & ARRAY_DISPLACED_BIT)
+	if (ldb (ARRAY_DISPLACED_BIT, arr_hdr))
 		DSP_ARRAY_SETUP ();
 	
 }
@@ -5321,9 +5174,7 @@ misc_copy_array_contents (void)
 	while (to_idx < to_nelts) {
 		if (arr_idx < arr_nelts) {
 			// M-T := FROM ITEM, CLOBBER M-J
-			ARRAY_TYPE_REF_DISPATCH (get_field (arr_hdr,
-							    ARRAY_TYPE_FIELD_len,
-							    ARRAY_TYPE_FIELD_pos));
+			ARRAY_TYPE_REF_DISPATCH (ldb (ARRAY_TYPE_FIELD, arr_hdr));
 		} else {
 			A_T = to_fill;
 		}
@@ -5334,9 +5185,7 @@ misc_copy_array_contents (void)
 
 		arr_idx = to_idx;
 		arr_data = to_data;
-		ARRAY_TYPE_STORE_DISPATCH (get_field (to_hdr,
-						      ARRAY_TYPE_FIELD_len,
-						      ARRAY_TYPE_FIELD_pos));
+		ARRAY_TYPE_STORE_DISPATCH (ldb (ARRAY_TYPE_FIELD, to_hdr));
 		
 		// XCARC5
 		to_idx++;
@@ -5431,7 +5280,6 @@ void misc_cddddr (void) {  A_T = pdl_pop(); QCDR(); QCDR(); QCDR(); QCDR(); }
 void
 misc_args_info (void)
 {
-	qfields result;
 	Q tem, ndim;
 
 	// FUNCTION CAN BE ANYTHING MEANINGFUL IN FUNCTION
@@ -5441,9 +5289,8 @@ misc_args_info (void)
 
 	A_S = pdl_pop ();
 
-	result.all = FIX_ZERO;
-	result.numarg.max_args = ~0;
-	result.numarg.interpreted = 1;
+	A_T = dpb (-1, ARG_DESC_MAX_ARGS, FIX_ZERO);
+	A_T = dpb (1, ARG_DESC_INTERPRETED, A_T);
 
 
 	// ENTER HERE FROM APPLY, ALSO REENTER TO TRY AGAIN (CLOSURE, ETC).
@@ -5451,8 +5298,6 @@ misc_args_info (void)
 
 top:
 	A_S = q_typed_pointer (A_S);
-
-	A_T = result.all;
 
 	switch (q_data_type (A_S)) {
 	case dtp_trap:
@@ -5508,20 +5353,14 @@ top:
 
 	case dtp_array_pointer:
 		tem = vmread_transport_header (A_S);
-		ndim = get_field (tem,
-				  ARRAY_NUMBER_OF_DIMENSIONS_len,
-				  ARRAY_NUMBER_OF_DIMENSIONS_pos);
-		result.all = FIX_ZERO;
-		result.numarg.min_args = ndim;
-		result.numarg.max_args = ndim;
-		A_T = result.all;
+		ndim = ldb (ARRAY_NUMBER_OF_DIMENSIONS, tem);
+		A_T = dpb (ndim, ARG_DESC_MIN_ARGS, FIX_ZERO);
+		A_T = dpb (ndim, ARG_DESC_MAX_ARGS, A_T);
 		return;
 
 	case dtp_stack_group:
 		// STACK GROUP ACCEPTS ANY NUMBER OF EVALED ARGS
-		result.all = FIX_ZERO;
-		result.numarg.min_args = 0;
-		result.numarg.max_args = ~0;
+		A_T = dpb (-1, ARG_DESC_MAX_ARGS, FIX_ZERO);
 		return;
 
 	case dtp_closure:
@@ -5567,7 +5406,7 @@ lcons_cache (Q area, Q size)
 {
 	Q result;
 
-	if (A_FLAGS & M_FLAGS_TRANSPORT)
+	if (ldb (M_FLAGS_TRANSPORT, A_FLAGS))
 		return (A_V_NIL); // Transporter must avoid cache
 	
 	if (area != A_LCONS_CACHE_AREA)
@@ -5616,12 +5455,8 @@ lcons (Q area, Q size)
 keep_going:
 	while ((region & BOXED_SIGN_BIT) == 0) {
 		region_bits = vmread (A_V_REGION_BITS + region);
-		type = get_field (region_bits,
-				  REGION_SPACE_TYPE_len,
-				  REGION_SPACE_TYPE_pos);
-		rep = get_field (region_bits,
-				 REGION_REPRESENTATION_TYPE_len,
-				 REGION_REPRESENTATION_TYPE_pos);
+		type = ldb (REGION_SPACE_TYPE, region_bits);
+		rep = ldb (REGION_REPRESENTATION_TYPE, region_bits);
 		
 		if (rep == REGION_REPRESENTATION_TYPE_LIST) {
 			switch (type) {
@@ -5632,12 +5467,12 @@ keep_going:
 				break;
 
 			case REGION_SPACE_NEW:
-				if ((A_FLAGS & M_FLAGS_TRANSPORT) == 0)
+				if (ldb (M_FLAGS_TRANSPORT, A_FLAGS) == 0)
 					goto win;
 				break;
 				
 			case REGION_SPACE_COPY:
-				if ((A_FLAGS & M_FLAGS_TRANSPORT) != 0)
+				if (ldb (M_FLAGS_TRANSPORT, A_FLAGS) != 0)
 					goto win;
 				break;
 				
@@ -5666,7 +5501,7 @@ win:
 	region_origin = q_pointer (vmread (A_V_REGION_ORIGIN + region));
 	result = q_pointer (region_origin + old_free_pointer);
 
-	if ((A_FLAGS & M_FLAGS_TRANSPORT) == 0) {
+	if (ldb (M_FLAGS_TRANSPORT, A_FLAGS) == 0) {
 		A_LCONS_CACHE_AREA = area;
 		A_LCONS_CACHE_REGION = region;
 		A_LCONS_CACHE_REGION_ORIGIN = region_origin;
@@ -5783,8 +5618,10 @@ struct misc_func misc_funcs[01000] = {
 	[0410] = { "MEMQ", misc_memq },
 	[0412] = { ">", misc_greater },
 	[0417] = { "NTH", misc_nth },
+	[0420] = { "NTHCDR", misc_nthcdr },
 	[0430] = { "ARRAY-LEADER", misc_array_leader },
 	[0431] = { "STORE-ARRAY-LEADER", misc_store_array_leader },
+	[0456] = { "%CATCH-OPEN", misc_catch_open },
 	[0472] = { "%P-LDB", misc_p_ldb },
 	[0473] = { "%P-DPB", misc_p_dpb },
 	[0500] = { "COPY-ARRAY-CONTENTS", misc_copy_array_contents },
@@ -5821,7 +5658,7 @@ MISC(void)
 	struct misc_func *mp;
 
 	// GET LOW 9 BITS OF INST
-	A_B = current_macro_inst.macro_inst.offset;
+	A_B = ldb (M_INST_ADR, macro_inst);
 
 	mp = &misc_funcs[A_B]; /* already masked to 9 bits */
 	
@@ -5834,7 +5671,7 @@ MISC(void)
 		print_q_dbg ("misc val", A_T);
 
 	/* D-ND3 */
-	switch (current_macro_inst.macro_inst.dest) {
+	switch (ldb (M_INST_DEST, macro_inst)) {
 	case D_IGNORE: break;
 	case D_PDL: MISC_TO_STACK (); break;
 	case D_NEXT: MISC_TO_STACK (); break;
@@ -5890,11 +5727,27 @@ QIADD (void)
 }
 
 void
+QISUB (void)
+{
+	A_A = ARITH_2ARG_SUB;
+	if (D_NUMARG1 (q_data_type (pdl_peek ())) == 0) {
+		if (D_FIXNUM_NUMARG2 (q_data_type (A_T),
+				      NUMBER_CODE_FIXNUM) == 0) {
+			A_1 -= A_2;
+			FIXPACK_P ();
+			return;
+		}
+	}
+	ILLOP ("QIADD");
+}
+
+void
 QIDIV (void)
 {
 	A_A = ARITH_2ARG_DIV;
 	if (D_NUMARG1 (q_data_type (pdl_peek ())) == 0) {
-		if (D_FIXNUM_NUMARG2 (q_data_type (A_T), NUMBER_CODE_FIXNUM) == 0) {
+		if (D_FIXNUM_NUMARG2 (q_data_type (A_T),
+				      NUMBER_CODE_FIXNUM) == 0) {
 			A_1 = (signed)A_1 / (signed)A_2;
 			FIXPACK_P ();
 			return;
@@ -5929,10 +5782,10 @@ QIND1(void)
 
 	// D-ND1
 	// note: these end by pushing M-T on the pld 
-	switch (current_macro_inst.macro_inst_reg.dest) {
+	switch (ldb (M_INST_DEST, macro_inst)) {
 	case 0: ILLOP ("qind1");
 	case 1:	QIADD (); break; 
-	case 2: ILLOP ("qind1"); //(QISUB)
+	case 2: QISUB (); break; //(QISUB)
 	case 3: QIMUL (); break;
 	case 4: QIDIV (); break;
 	case 5:	QIAND (); break;
@@ -5999,7 +5852,7 @@ SETE_CDR (void)
 {
 	// QISCDR
 	QCDR ();
-	A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+	A_1 = ldb (M_INST_DELTA, macro_inst);
 	QADCM2 ();
 }
 
@@ -6009,7 +5862,7 @@ QISP1 (void)
 	// SETE-1+
 	pdl_push (A_T);
 	X1PLS ();
-	A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+	A_1 = ldb (M_INST_DELTA, macro_inst);
 	QADCM2 ();
 }
 
@@ -6019,7 +5872,7 @@ QISM1 (void)
 	// SETE-1-
 	pdl_push (A_T);
 	X1MNS ();
-	A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+	A_1 = ldb (M_INST_DELTA, macro_inst);
 	QADCM2 ();
 }
 
@@ -6041,7 +5894,7 @@ QIND2(void)
 	fetch_arg ();
 
 	// D-ND2 
-	switch (current_macro_inst.macro_inst_reg.dest) {
+	switch (ldb (M_INST_DEST, macro_inst)) {
 	case 0: QIEQL (); break; // =
 	case 1: QIGRP (); break; // > QIGRP
 	case 2: QILSP (); break; // < QILSP
@@ -6061,13 +5914,13 @@ void
 QADCM2 (void)
 {
 	// QADCM2
-	switch (current_macro_inst.macro_inst_reg.reg) {
+	switch (ldb (M_INST_REGISTER, macro_inst)) {
 	case reg_fef100:
 	case reg_fef200:
 	case reg_fef300:
 		/* full delta */
 		// QSTFE
-		A_1 = current_macro_inst.macro_inst.offset;
+		A_1 = ldb (M_INST_ADR, macro_inst);
 		/* fall in */
 	case reg_fef: 
 		// QSTFE1
@@ -6105,9 +5958,9 @@ QBND4 (Q addr)
 	A_E = q_all_but_typed_pointer (md) | make_pointer (dtp_locative, 0);
 	old_value = q_typed_pointer (md);
 
-	if ((A_FLAGS & M_FLAGS_QBBFL) == 0) {
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS) == 0) {
 		old_value |= Q_FLAG_BIT;
-		A_FLAGS |= M_FLAGS_QBBFL;
+		A_FLAGS = dpb (1, M_FLAGS_QBBFL, A_FLAGS);
 	}
 
 	A_QLBNDP++;
@@ -6117,7 +5970,7 @@ QBND4 (Q addr)
 }
 
 void
-QIBNDP (void)
+QIBND_combined (Q pop_flag, Q new_val)
 {
 	Q old_value;
 	Q vcell;
@@ -6130,13 +5983,13 @@ QIBNDP (void)
 	// SAVE CURRENT CONTENTS, DON'T CHANGE
 	// LEAVE M-E SET TO OLD CONTENTS (MAINLY FOR CDR CODE)
 
-	A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+	A_1 = ldb (M_INST_DELTA, macro_inst);
 
 	// dispatch QADCM6 
 	// DISPATCH FOR GETTING EFFECTIVE ADDRESS FOR BIND to pdl.
 	// THIS HAS TO HAVE A SPECIAL KLUDGE FOR DOING EXACTLY ONE LEVEL
 	// OF INDIRECTION ON DATA IN THE FEF.
-	switch (current_macro_inst.macro_inst_reg.reg) {
+	switch (ldb (M_INST_REGISTER, macro_inst)) {
 	case reg_fef:
 	case reg_fef100:
 	case reg_fef200:
@@ -6144,7 +5997,7 @@ QIBNDP (void)
 		// SPECIAL KLUDGEY ADDRESS ROUTINE FOR BIND.  ALWAYS INDIRECTS ONE LEVEL.
 		// RETURNS WITH ADDRESS ON PDL.
 		// QBAFE
-		A_1 = current_macro_inst.macro_inst.offset; // FULL DELTA
+		A_1 = ldb (M_INST_ADR, macro_inst); // FULL DELTA
 		vmread_transport_no_evcp (pdl_ref (A_AP) + A_1); // ONLY TRANSPORT, DON'T DO INVZ
 
 		// MAKE SURE IT WAS AN EVCP AND RETURN LOCATIVE ON PDL
@@ -6185,9 +6038,9 @@ QIBNDP (void)
 	cell_bits = q_all_but_typed_pointer (md);
 
 	A_QLBNDP++;
-	if ((A_FLAGS & M_FLAGS_QBBFL) == 0) {
+	if (ldb (M_FLAGS_QBBFL, A_FLAGS) == 0) {
 		old_value |= Q_FLAG_BIT;
-		A_FLAGS |= M_FLAGS_QBBFL;
+		A_FLAGS = dpb (1, M_FLAGS_QBBFL, A_FLAGS);
 	}
 
 	// QBND3
@@ -6200,7 +6053,11 @@ QIBNDP (void)
 
 	// rest of QIBNDP (pop) QIBDN1
 
-	A_T = (pdl_pop () & Q_TYPED_POINTER) | cell_bits;
+	if (pop_flag != A_V_NIL) {
+		A_T = (pdl_pop () & Q_TYPED_POINTER) | cell_bits;
+	} else {
+		A_T = new_val;
+	}
 
 	vmwrite_gc_write_test (vcell, A_T);
 }
@@ -6209,36 +6066,38 @@ void
 QIND3(void) 
 {
 	/* D-ND3 */
-	switch (current_macro_inst.macro_inst_reg.dest) {
+	switch (ldb (M_INST_DEST, macro_inst)) {
 	case 0: ILLOP ("QIBND");
-	case 1: ILLOP ("QIBNDN");
+	case 1:
+		QIBND_combined (A_V_NIL, A_V_NIL);
+		break;
 	case 2:
-		QIBNDP ();
+		QIBND_combined (A_V_TRUE, A_V_NIL);
 		break;
 	case 3: 
 		// QISETN
 		A_T = SYM_NIL;
-		A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+		A_1 = ldb (M_INST_DELTA, macro_inst);
 		QADCM2 ();
 		break;
 
 	case 4: 
 		// QISETZ
 		A_T = FIX_ZERO;
-		A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+		A_1 = ldb (M_INST_DELTA, macro_inst);
 		QADCM2 ();
 		break;
 
 	case 5: ILLOP ("QIPSHE");
 	case 6: // QIMVM  MOVEM
 		A_T = pdl_peek ();
-		A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+		A_1 = ldb (M_INST_DELTA, macro_inst);
 		QADCM2 ();
 		break;
 	case 7: 
 		// QIPOP
 		A_T = pdl_pop ();
-		A_1 = current_macro_inst.macro_inst_reg.reg_offset;
+		A_1 = ldb (M_INST_DELTA, macro_inst);
 		QADCM2 ();
 		break;
 	}
@@ -6247,12 +6106,10 @@ QIND3(void)
 void
 fetch_macro_inst (void)
 {
-	if ((LC_pc & 1) == 0)
-		current_macro_inst.all
-			= vmread (LC_fef + (LC_pc / 2)) & 0xffff;
-	else
-		current_macro_inst.all
-			= (vmread (LC_fef + (LC_pc / 2)) >> 16) & 0xffff;
+	macro_inst = vmread (LC_fef + (LC_pc / 2));
+	if (LC_pc & 1)
+		macro_inst >>= 16;
+	macro_inst &= 0xffff;
 	LC_pc++;
 }	
 
@@ -6265,7 +6122,7 @@ QMLP (void)
 
 	macro_count++;
 
-	if (macro_count >= 17300) {
+	if (macro_count >= 33400) {
 		dflags = -1;
 	}
 
@@ -6276,7 +6133,7 @@ QMLP (void)
 
 	fetch_macro_inst ();
 
-	switch (current_macro_inst.macro_inst.op) {
+	switch (ldb (M_INST_OP, macro_inst)) {
 	case 0: QICALL(); break; /* CALL */
 	case 1: QICAL0(); break; /* CALL0 */
 	case 2: QIMOVE(); break; /* MOVE */
@@ -6712,11 +6569,9 @@ print_q_verbose (Q q)
 		int i;
 		char *base;
 
-		type = get_field (hdr, ARRAY_TYPE_FIELD_len, ARRAY_TYPE_FIELD_pos);
+		type = ldb (ARRAY_TYPE_FIELD, hdr);
 		if (type == 011) { /* art-string */
-			int nbytes = get_field (hdr,
-						ARRAY_INDEX_LENGTH_IF_SHORT_len,
-						ARRAY_INDEX_LENGTH_IF_SHORT_pos);
+			int nbytes = ldb (ARRAY_INDEX_LENGTH_IF_SHORT, hdr);
 			base = (char *)(vm + q_pointer (q) + 1);
 			printf ("\"");
 			for (i = 0; i < nbytes; i++)

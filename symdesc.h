@@ -31,41 +31,6 @@ struct sym data_type_numbers_desc[] = {
 	{ "dtp-stack-closure", 032 },
 };
 
-struct sym data_types_desc[] = {
-	{ "DTP-TRAP", 0 },
-	{ "DTP-NULL", 1 << 24},
-	{ "DTP-FREE", 2 << 24},
-	{ "DTP-SYMBOL", 3 << 24},
-	{ "DTP-SYMBOL-HEADER", 4 << 24},
-	{ "DTP-FIX", 5 << 24},
-	{ "DTP-EXTENDED-NUMBER", 6 << 24},
-	{ "DTP-HEADER", 7 << 24},
-	{ "DTP-GC-FORWARD", 010 << 24},
-	{ "DTP-EXTERNAL-VALUE-CELL-POINTER", 011 << 24},
-	{ "DTP-ONE-Q-FORWARD", 012 << 24},
-	{ "DTP-HEADER-FORWARD", 013 << 24},
-	{ "DTP-BODY-FORWARD", 014 << 24},
-	{ "DTP-LOCATIVE", 015 << 24},
-	{ "DTP-LIST", 016 << 24},
-	{ "DTP-U-CODE-ENTRY", 017 << 24},
-	{ "DTP-FEF-POINTER", 020 << 24},
-	{ "DTP-ARRAY-POINTER", 021 << 24},
-	{ "DTP-ARRAY-HEADER", 022 << 24},
-	{ "DTP-STACK-GROUP", 023 << 24},
-	{ "DTP-CLOSURE", 024 << 24},
-	{ "DTP-SMALL-FLONUM", 025 << 24},
-	{ "DTP-SELECT-METHOD", 026 },
-	{ "DTP-INSTANCE", 027 << 24},
-	{ "DTP-INSTANCE-HEADER", 030 },
-	{ "DTP-ENTITY", 031 << 24},
-	{ "DTP-STACK-CLOSURE", 032 << 24},
-	{ "DTP-033", 033 << 24},
-	{ "DTP-034", 034 << 24},
-	{ "DTP-035", 035 << 24},
-	{ "DTP-036", 036 << 24},
-	{ "DTP-037", 037 << 24},
-};
-
 struct sym sys_com_desc[] = {
 	{ "SYS-COM-AREA-ORIGIN-PNTR", 0 },
 	{ "SYS-COM-VALID-SIZE", 1 },
@@ -93,20 +58,15 @@ struct sym sys_com_desc[] = {
         { "SYS-COM-MAJOR-VERSION", 027 },
 };
 
-#define FLAG(pos) (1 << (pos))
-
 struct sym array_header_fields_desc[] = {
-	{ "ARRAY-INDEX-LENGTH-IF-SHORT-pos", 0 },
-	{ "ARRAY-INDEX-LENGTH-IF-SHORT-len", 012 },
-	{ "ARRAY-NAMED-STRUCTURE-FLAG",  FLAG (012) },
-	{ "ARRAY-LONG-LENGTH-FLAG", FLAG (013) },
-	{ "ARRAY-NUMBER-OF-DIMENSIONS-pos", 014 },
-	{ "ARRAY-NUMBER-OF-DIMENSIONS-len", 3 },
-	{ "ARRAY-FLAG",  FLAG (017) },
-	{ "ARRAY-DISPLACED-BIT", FLAG (020) },
-	{ "ARRAY-LEADER-BIT",  FLAG (021) },
-	{ "ARRAY-TYPE-FIELD-pos", 023 },
-	{ "ARRAY-TYPE-FIELD-len", 5 },
+	{ "ARRAY-INDEX-LENGTH-IF-SHORT", BIT_FIELD (012, 0) },
+	{ "ARRAY-NAMED-STRUCTURE-FLAG",  BIT_FIELD (1, 012) },
+	{ "ARRAY-LONG-LENGTH-FLAG", BIT_FIELD (1, 013) },
+	{ "ARRAY-NUMBER-OF-DIMENSIONS", BIT_FIELD (3, 014) },
+	{ "ARRAY-FLAG", BIT_FIELD (1, 017) },
+	{ "ARRAY-DISPLACED-BIT", BIT_FIELD (1, 020) },
+	{ "ARRAY-LEADER-BIT", BIT_FIELD (1, 021) },
+	{ "ARRAY-TYPE-FIELD", BIT_FIELD (5, 023) },
 };
 
 struct sym stack_group_qs_desc[] = {
@@ -123,17 +83,15 @@ struct sym stack_group_qs_desc[] = {
 	{ "SG-STATE", 012 },
 
 	/* in sg-state */
-	{ "SG-ST-CURRENT-STATE-pos", 0 },
-	{ "SG-ST-CURRENT-STATE-len", 6 },
-	{ "SG-ST-FOOTHOLD-EXECUTING-FLAG", FLAG (6) },
-	{ "SG-ST-PROCESSING-ERROR-FLAG", FLAG (7) },
-	{ "SG-ST-PROCESSING-INTERRUPT-FLAG", FLAG (010) },
-	{ "SG-ST-SAFE", FLAG (011) },
-	{ "SG-ST-INST-DISP-pos", 012 },
-	{ "SG-ST-INST-DISP-len", 02 },
-	{ "SG-ST-IN-SWAPPED-STATE", FLAG (026) },
-	{ "SG-ST-SWAP-SV-ON-CALL-OUT", FLAG (025) },
-	{ "SG-ST-SWAP-SV-OF-SG-THAT-CALLS-ME", FLAG (024) },
+	{ "SG-ST-CURRENT-STATE", BIT_FIELD (6, 0) },
+	{ "SG-ST-FOOTHOLD-EXECUTING-FLAG", BIT_FIELD (1, 6) },
+	{ "SG-ST-PROCESSING-ERROR-FLAG", BIT_FIELD (1, 7) },
+	{ "SG-ST-PROCESSING-INTERRUPT-FLAG", BIT_FIELD (1, 010) },
+	{ "SG-ST-SAFE", BIT_FIELD (1, 011) },
+	{ "SG-ST-INST-DISP", BIT_FIELD (2, 012) },
+	{ "SG-ST-IN-SWAPPED-STATE", BIT_FIELD (1, 026) },
+	{ "SG-ST-SWAP-SV-ON-CALL-OUT", BIT_FIELD (1, 025) },
+	{ "SG-ST-SWAP-SV-OF-SG-THAT-CALLS-ME", BIT_FIELD (1, 024) },
 
 	{ "SG-PREVIOUS-STACK-GROUP", 013 },
 	{ "SG-CALLING-ARGS-POINTER", 014 },
@@ -148,25 +106,17 @@ struct sym stack_group_qs_desc[] = {
 	{ "SG-SAVED-QLARYL", 025 },
 
 	{ "SG-SAVED-M-FLAGS", 026 },
-	{ "SG-FLAGS-QBBFL", FLAG (0) },
+	{ "SG-FLAGS-QBBFL", BIT_FIELD (1, 0) },
 
-	{ "SG-FLAGS-CAR-SYM-MODE-pos", 1 },
-	{ "SG-FLAGS-CAR-SYM-MODE-len", 2 },
+	{ "SG-FLAGS-CAR-SYM-MODE", BIT_FIELD (2, 1) },
+	{ "SG-FLAGS-CAR-NUM-MODE", BIT_FIELD (2, 3) },
+	{ "SG-FLAGS-CDR-SYM-MODE", BIT_FIELD (2, 5) },
+	{ "SG-FLAGS-CDR-NUM-MODE", BIT_FIELD (2, 7) },
 
-	{ "SG-FLAGS-CAR-NUM-MODE-pos", 3 },
-	{ "SG-FLAGS-CAR-NUM-MODE-len", 2 },
-
-	{ "SG-FLAGS-CDR-SYM-MODE-pos", 5 },
-	{ "SG-FLAGS-CDR-SYM-MODE-len", 2 },
-
-	{ "SG-FLAGS-CDR-NUM-MODE-pos", 7 },
-	{ "SG-FLAGS-CDR-NUM-MODE-len", 2 },
-
-	{ "SG-FLAGS-DONT-SWAP-IN", FLAG (011) },
-	{ "SG-FLAGS-TRAP-ENABLE", FLAG (012) },
-	{ "SG-FLAGS-MAR-MODE-pos", 013 },
-	{ "SG-FLAGS-MAR-MODE-len", 2 },
-	{ "SG-FLAGS-PGF-WRITE", FLAG (015) },
+	{ "SG-FLAGS-DONT-SWAP-IN", BIT_FIELD (1, 011) },
+	{ "SG-FLAGS-TRAP-ENABLE", BIT_FIELD (1, 012) },
+	{ "SG-FLAGS-MAR-MODE", BIT_FIELD (2, 013) },
+	{ "SG-FLAGS-PGF-WRITE", BIT_FIELD (1, 015) },
 
 	{ "SG-AC-K", 027 },
 	{ "SG-AC-S", 030 },
@@ -189,55 +139,42 @@ struct sym stack_group_qs_desc[] = {
 };
 
 struct sym fefh_constant_values_desc[] = {
-	{ "FEFH-NO-ADL", FLAG (18) }, /* decimal! */
-	{ "FEFH-FAST-ARG", FLAG (17) },
-	{ "FEFH-SV-BIND", FLAG (16) },
-	{ "FEFH-PC-pos", 0 },
-	{ "FEFH-PC-len", 020 },
-	{ "FEFH-PC-IN-WORDS-pos", 1 },
-	{ "FEFH-PC-IN-WORDS-len", 017 },
+	{ "FEFH-NO-ADL", BIT_FIELD (1, 022) },
+	{ "FEFH-FAST-ARG", BIT_FIELD (1, 021) },
+	{ "FEFH-SV-BIND", BIT_FIELD (1, 020) },
+	{ "FEFH-PC", BIT_FIELD (020, 0) },
+	{ "FEFH-PC-IN-WORDS", BIT_FIELD (017, 1) },
 };
 
 struct sym m_inst_buffer_desc[] = {
-	{ "M-INST-DEST-pos", 015 },
-	{ "M-INST-DEST-len", 3 },
-	{ "M-INST-OP-pos", 011 },
-	{ "M-INST-OP-len", 4},
-	{ "M-INST-ADR-pos", 0 },
-	{ "M-INST-ADR-len", 011 },
-	{ "M-INST-REGISTER-pos", 6 },
-	{ "M-INST-REGISTER-len", 3 },
-	{ "M-INST-DELTA-pos", 0 },
-	{ "M-INST-DELTA-len", 6 },
+	{ "M-INST-DEST", BIT_FIELD (3, 015) },
+	{ "M-INST-OP", BIT_FIELD (4, 011) },
+	{ "M-INST-ADR", BIT_FIELD (011, 0) },
+	{ "M-INST-REGISTER", BIT_FIELD (3, 6) },
+	{ "M-INST-DELTA", BIT_FIELD (6, 0) },
 };
 
 struct sym linear_pdl_call_state_desc[] = {
 	// LPCLS (%LP-CALL-STATE).  Stored when this call frame is created.
-	{ "LP-CLS-DOWNWARD-CLOSURE-PUSHED", FLAG (025) },
-	{ "LP-CLS-ADI-PRESENT", FLAG (024) },
-	{ "LP-CLS-DESTINATION-pos", 020 },
-	{ "LP-CLS-DESTINATION-len", 4 },
-	{ "LP-CLS-DELTA-TO-OPEN-BLOCK-pos", 010 },
-	{ "LP-CLS-DELTA-TO-OPEN-BLOCK-len", 010	},
-	{ "LP-CLS-DELTA-TO-ACTIVE-BLOCK-pos", 0 },
-	{ "LP-CLS-DELTA-TO-ACTIVE-BLOCK-len", 010 },
+	{ "LP-CLS-DOWNWARD-CLOSURE-PUSHED", BIT_FIELD (1, 025) },
+	{ "LP-CLS-ADI-PRESENT", BIT_FIELD (1, 024) },
+	{ "LP-CLS-DESTINATION", BIT_FIELD (4, 020) },
+	{ "LP-CLS-DELTA-TO-OPEN-BLOCK", BIT_FIELD (010, 010) },
+	{ "LP-CLS-DELTA-TO-ACTIVE-BLOCK", BIT_FIELD (010, 0) },
 };
 
 struct sym linear_pdl_exit_state_desc[] = {
 	// LPEXS (%LP-EXIT-STATE).  Stored when this frame calls out.
-	{ "LP-EXS-MICRO-STACK-SAVED", FLAG (021) },
-	{ "LP-EXS-PC-STATUS", FLAG (020) },
-	{ "LP-EXS-BINDING-BLOCK-PUSHED", FLAG (020) },
-	{ "LP-EXS-EXIT-PC-pos", 0 },
-	{ "LP-EXS-EXIT-PC-len", 017 },
+	{ "LP-EXS-MICRO-STACK-SAVED", BIT_FIELD (1, 021) },
+	{ "LP-EXS-PC-STATUS", BIT_FIELD (1, 020) },
+	{ "LP-EXS-BINDING-BLOCK-PUSHED", BIT_FIELD (1, 020) },
+	{ "LP-EXS-EXIT-PC", BIT_FIELD (017, 0) },
 };
 
 struct sym linear_pdl_entry_state_desc[] = {
 	// LPENS (%LP-ENTRY-STATE).  Stored when this frame entered.
-	{ "LP-ENS-NUM-ARGS-SUPPLIED-pos", 010 },
-	{ "LP-ENS-NUM-ARGS-SUPPLIED-len", 6 },
-	{ "LP-ENS-MACRO-LOCAL-BLOCK-ORIGIN-pos", 0 },
-	{ "LP-ENS-MACRO-LOCAL-BLOCK-ORIGIN-len", 010 },
+	{ "LP-ENS-NUM-ARGS-SUPPLIED", BIT_FIELD (6, 010) },
+	{ "LP-ENS-MACRO-LOCAL-BLOCK-ORIGIN", BIT_FIELD (010, 0) },
 };
 
 struct sym dests_desc[] = {
@@ -295,26 +232,22 @@ struct sym areas_desc[] = {
 };
 
 struct sym m_flags_desc[] = {
-	{ "M-FLAGS-QBBFL", FLAG (0) },
-	{ "M-FLAGS-CAR-SYM-MODE-pos", 1 },
-	{ "M-FLAGS-CAR-SYM-MODE-len", 2 },
-	{ "M-FLAGS-CAR-NUM-MODE-pos", 3 },
-	{ "M-FLAGS-CAR-NUM-MODE-len", 2 },
-	{ "M-FLAGS-CDR-SYM-MODE-pos", 5 },
-	{ "M-FLAGS-CDR-SYM-MODE-len", 2 },
-	{ "M-FLAGS-CDR-NUM-MODE-pos", 7 },
-	{ "M-FLAGS-CDR-NUM-MODE-len", 2 },
-	{ "M-FLAGS-DONT-SWAP-IN", FLAG (011) },
-	{ "M-FLAGS-TRAP-ENABLE", FLAG (012) },
-	{ "M-FLAGS-MAR-MODE", FLAG (013) },
-	{ "M-FLAGS-PGF-WRITE", FLAG (015) },
-	{ "M-FLAGS-INTERRUPT", FLAG (016) },
-	{ "M-FLAGS-SCAVENGE", FLAG (017) },
-	{ "M-FLAGS-TRANSPORT", FLAG (020) },
-	{ "M-FLAGS-STACK-GROUP-SWITCH", FLAG (021) },
-	{ "M-FLAGS-DEFERRED-SEQUENCE-BREAK", FLAG (022) },
-	{ "M-FLAGS-METER-STACK-GROUP-ENABLE", FLAG (023) },
-	{ "M-FLAGS-TRAP-ON-CALLS", FLAG (024) },
+	{ "M-FLAGS-QBBFL", BIT_FIELD (1, 0) },
+	{ "M-FLAGS-CAR-SYM-MODE", BIT_FIELD (2, 1) },
+	{ "M-FLAGS-CAR-NUM-MODE", BIT_FIELD (2, 3) },
+	{ "M-FLAGS-CDR-SYM-MODE", BIT_FIELD (2, 5) },
+	{ "M-FLAGS-CDR-NUM-MODE", BIT_FIELD (2, 7) },
+	{ "M-FLAGS-DONT-SWAP-IN", BIT_FIELD (1, 011) },
+	{ "M-FLAGS-TRAP-ENABLE", BIT_FIELD (1, 012) },
+	{ "M-FLAGS-MAR-MODE", BIT_FIELD (1, 013) },
+	{ "M-FLAGS-PGF-WRITE", BIT_FIELD (1, 015) },
+	{ "M-FLAGS-INTERRUPT", BIT_FIELD (1, 016) },
+	{ "M-FLAGS-SCAVENGE", BIT_FIELD (1, 017) },
+	{ "M-FLAGS-TRANSPORT", BIT_FIELD (1, 020) },
+	{ "M-FLAGS-STACK-GROUP-SWITCH", BIT_FIELD (1, 021) },
+	{ "M-FLAGS-DEFERRED-SEQUENCE-BREAK", BIT_FIELD (1, 022) },
+	{ "M-FLAGS-METER-STACK-GROUP-ENABLE", BIT_FIELD (1, 023) },
+	{ "M-FLAGS-TRAP-ON-CALLS", BIT_FIELD (1, 024) },
 };
 
 struct sym header_types_desc[] = {
@@ -338,20 +271,27 @@ struct sym fefhi_desc[] = {
 	{ "FEFHI-SPECIAL-VALUE-CELL-PNTRS", 6 },
 };
 
-struct sym fefhi_sv_bitmap_desc[] = {
-	{ "FEFHI-SVM-ACTIVE", FLAG (026) },
-	{ "FEFHI-SVM-BITS-pos", 0 },
-	{ "FEFHI-SVM-BITS-len", 026 },
-	{ "FEFHI-SVM-HIGH-BIT", FLAG (025) },
+struct sym fefhi2_desc[] = {
+	{ "FEFHI-FSO-MAX-ARGS", BIT_FIELD (6, 0) },
+	{ "FEFHI-FSO-MIN-ARGS", BIT_FIELD (6, 6) },
+
+	{ "FEFHI-MS-LOCAL-BLOCK-LENGTH", BIT_FIELD (7, 0) },
+	{ "FEFHI-MS-ARG-DESC-ORG", BIT_FIELD (010, 7) },
+	{ "FEFHI-MS-BIND-DESC-LENGTH",  BIT_FIELD (010, 017) },
+	{ "FEFHI-MS-DEBUG-INFO-PRESENT", BIT_FIELD (1, 027) },
+	{ "FEFHI-SVM-ACTIVE", BIT_FIELD (1, 026) },
+	{ "FEFHI-SVM-BITS", BIT_FIELD (026, 0) },
+	{ "FEFHI-SVM-HIGH-BIT", BIT_FIELD (1, 025) },
 };
 
+
 struct sym error_substatus_desc[] = {
-	{ "M-ESUBS-TOO-FEW-ARGS", FLAG (0) },
-	{ "M-ESUBS-TOO-MANY-ARGS", FLAG (1) },
-	{ "M-ESUBS-BAD-QUOTED-ARG", FLAG (2) },
-	{ "M-ESUBS-BAD-EVALED-ARG", FLAG (3) },
-	{ "M-ESUBS-BAD-DT", FLAG (4) },
-	{ "M-ESUBS-BAD-QUOTE-STATUS", FLAG (5) },
+	{ "M-ESUBS-TOO-FEW-ARGS", BIT_FIELD (1, 0) },
+	{ "M-ESUBS-TOO-MANY-ARGS", BIT_FIELD (1, 1) },
+	{ "M-ESUBS-BAD-QUOTED-ARG", BIT_FIELD (1, 2) },
+	{ "M-ESUBS-BAD-EVALED-ARG", BIT_FIELD (1, 3) },
+	{ "M-ESUBS-BAD-DT", BIT_FIELD (1, 4) },
+	{ "M-ESUBS-BAD-QUOTE-STATUS", BIT_FIELD (1, 5) },
 };
 
 struct sym fef_specialness_desc[] = {
@@ -490,15 +430,11 @@ struct sym sg_states_desc[] = {
 };
 
 struct sym adi_fields_desc[] = {
-	{ "ADI-TYPE-pos", 024 },
-	{ "ADI-TYPE-len", 3 },
-	{ "ADI-RET-STORING-OPTION-pos", 021 },
-	{ "ADI-RET-STORING-OPTION-len", 3 },
-	{ "ADI-RET-SWAP-SV", FLAG (020) },
-	{ "ADI-RET-NUM-VALS-EXPECTING-pos", 0 },
-	{ "ADI-RET-NUM-VALS-EXPECTING-len", 6 },
-	{ "ADI-RPC-MICRO-STACK-LEVEL-pos", 0 },
-	{ "ADI-RPC-MICRO-STACK-LEVEL-len", 6 },
+	{ "ADI-TYPE", BIT_FIELD (3, 024) },
+	{ "ADI-RET-STORING-OPTION", BIT_FIELD (3, 021) },
+	{ "ADI-RET-SWAP-SV", BIT_FIELD (1, 020) },
+	{ "ADI-RET-NUM-VALS-EXPECTING", BIT_FIELD (6, 0) },
+	{ "ADI-RPC-MICRO-STACK-LEVEL", BIT_FIELD (6, 0) },
 };
 
 struct sym adi_kinds_desc[] = {
@@ -529,13 +465,33 @@ struct sym region_space_type_desc[] = {
 struct sym region_bits_desc[] = {
 	{ "REGION-OLDSPACE-META-BIT", 023 },
 	{ "REGION-EXTRA-PDL-META-BIT", 022 },
-	{ "REGION-REPRESENTATION-TYPE_pos", 020 },
-	{ "REGION-REPRESENTATION-TYPE_len", 2 },
-	{ "REGION-SPACE-TYPE-pos", 011 },
-	{ "REGION-SPACE-TYPE-len", 4 },
+	{ "REGION-REPRESENTATION-TYPE", BIT_FIELD (2, 020) },
+	{ "REGION-SPACE-TYPE", BIT_FIELD (4, 011) },
 	{ "REGION-REPRESENTATION-TYPE-LIST", 0 },
 	{ "REGION-REPRESENTATION-TYPE-STRUCTURE", 1 },
 
+};
+
+struct sym arg_desc_desc[] = {
+	{ "FEF-NAME-PRESENT", BIT_FIELD (1, 020) },
+	{ "FEF-SPECIAL-BIT", BIT_FIELD (1, 016) },
+	{ "FEF-SPECIALNESS", BIT_FIELD (2, 016) },
+	{ "FEF-FUNCTIONAL", BIT_FIELD (1, 015) },
+	{ "FEF-DES-DT", BIT_FIELD (4, 011) },
+	{ "FEF-QUOTE-STATUS", BIT_FIELD (2, 7) },
+	{ "FEF-ARG-SYNTAX", BIT_FIELD (3, 4) },
+	{ "FEF-INIT-OPTION", BIT_FIELD (4, 0) },
+};
+
+struct sym numarg_desc[] = {
+	{ "ARG-DESC-QUOTED-REST", BIT_FIELD (1, 025) },
+	{ "ARG-DESC-EVALED-REST", BIT_FIELD (1, 024) },
+	{ "ARG-DESC-ANY-REST", BIT_FIELD (2, 024) },
+	{ "ARG-DESC-FEF-QUOTE-HAIR", BIT_FIELD (1, 023) },
+	{ "ARG-DESC-INTERPRETED", BIT_FIELD (1, 022) },
+	{ "ARG-DESC-FEF-BIND-HAIR", BIT_FIELD (1, 021) },
+	{ "ARG-DESC-MIN-ARGS", BIT_FIELD (6, 6) },
+	{ "ARG-DESC-MAX-ARGS", BIT_FIELD (6, 0) },
 };
 
 #endif /* _SYMDESC_H_ */
