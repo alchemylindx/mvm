@@ -1,0 +1,67 @@
+Plan for micro debugger:
+
+Add new misc insturction %udbg which will cause a C function called
+"udbg" with the following signature:
+
+Q udbg (Q flag, Q val);
+
+When %udbg is hit when running normal lisp code, then udbg is called
+with 2 NIL arguments.
+
+udbg can depend on the lisp world being frozen.  For the immediate
+future, it can depend on the fact that there is no old space, but
+someday it will need its own transporter.  It can depend on stdin,
+stdout and stderr being connected to a terminal.  It shouldn't use any
+functions defined in the main mvm program, but should have its own
+functions for picking apart the lisp data structures.  It can use
+malloc as desired, and have whatever C global and static variables it
+wants, but once we turn on the garbage collector, udbg will not be
+able to hold a lisp reference between calls.
+
+If the udbg returns NIL, then, then %udbg also returns NIL, and we're
+back to normal lisp.
+
+The other alternative is that udbg returns a cons cell - lets call it
+"ret".  In this case, the miscellaneous instruction pushes a stack
+frame that will apply (car ret) to (cdr ret), and then return to the
+main macrocode dispatch loop.  When the frame returns, the udbg C
+function is called again, this time with T as the first argument, and
+the value of the expression as the second argument.
+
+The udbg C function can continue to return lists and receive values for
+as long as it wants, finally returning NIL to continue the machine.
+
+In the future, we'll add such nicities as a catch for errors, handling
+of multiple value returns, binding INHIBIT-SCHEDULING-FLAG to T, etc.
+
+Other features of udbg:
+
+It should never alter the state of the machine until the user has
+explicitly commanded it to do something that requires modification.
+For example, when we have a garbage collector, udbg should be willing
+to examine things in old space and not try to move them.  However, if
+the user asks it to call a function and refers to a value in old
+space, then udbg will have to move the object itself.
+
+udbg should be its own small lisp implementation probably organized so
+that each data type has two represenations: one in C, and one in the
+lisp world.  I'm imagining that something like this would work:
+
+udbg> (setq a 'FOO) => returns a symbol consed in C space
+
+udbg> (setq b (lm-find-symbol "USER:FOO")) => returns a reference
+to the symbol USER:FOO in lisp machine space
+
+udbg> (setq c (lm-symbol-pname b)) => returns a reference to a string
+containing "FOO" in lisp machine space
+
+udbg> (string-equal (symbol-pname a) (lm-symbol-pname b)) => T
+the strings from both spaces can be manipulated with the same
+primitives
+
+udbg> (lm-run '(+ 1 2)) => 3  using the %dbg stuff above to do the
+apply inside the lisp machine world
+
+Once all that works, have a mode of the udbg repl that sends every
+expression into the lisp world.  Note that %dbg doesn't do recursive
+evaluation, so that job will fall to dbg to organize.
